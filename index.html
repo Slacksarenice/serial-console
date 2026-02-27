@@ -337,6 +337,176 @@
       color: var(--accent);
     }
 
+    .peer-badge.clickable {
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .peer-badge.clickable:hover {
+      background: #0d5a3a;
+    }
+
+    .peer-list-panel {
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: 0;
+      background: var(--toolbar-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      min-width: 320px;
+      max-width: 420px;
+      max-height: 300px;
+      overflow-y: auto;
+      z-index: 100;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+      font-size: 0.75rem;
+    }
+
+    .peer-list-panel.visible {
+      display: block;
+    }
+
+    .peer-list-header {
+      padding: 8px 12px;
+      font-weight: 600;
+      color: var(--accent);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .peer-list-item {
+      padding: 6px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .peer-list-item:last-child {
+      border-bottom: none;
+    }
+
+    .peer-list-item .peer-ip {
+      color: var(--text);
+      font-family: 'Cascadia Code', monospace;
+      font-size: 0.8rem;
+    }
+
+    .peer-list-item .peer-id {
+      color: #8892b0;
+      font-size: 0.65rem;
+      font-family: monospace;
+    }
+
+    .peer-list-item .peer-duration {
+      color: #8892b0;
+      font-size: 0.65rem;
+      margin-left: auto;
+    }
+
+    .peer-list-item .peer-perm {
+      font-size: 0.6rem;
+      padding: 1px 6px;
+      border-radius: 8px;
+    }
+
+    .peer-list-item .peer-perm.rw {
+      background: #0a3d2a;
+      color: var(--text);
+      cursor: pointer;
+      border: 1px solid #00ff8844;
+    }
+
+    .peer-list-item .peer-perm.rw:hover {
+      background: #0d5a3a;
+    }
+
+    .peer-list-item .peer-perm.ro {
+      background: #3d2a0a;
+      color: #ffd700;
+      cursor: pointer;
+      border: 1px solid #ffd70044;
+    }
+
+    .peer-list-item .peer-perm.ro:hover {
+      background: #5a3d0a;
+    }
+
+    .peer-list-empty {
+      padding: 12px;
+      text-align: center;
+      color: #4a4a6a;
+    }
+
+    .pending-bar {
+      background: #2a1a00;
+      border-bottom: 1px solid #ffd70044;
+      padding: 0;
+      flex-shrink: 0;
+      overflow: hidden;
+      max-height: 0;
+      transition: max-height 0.3s ease, padding 0.3s ease;
+    }
+
+    .pending-bar.has-pending {
+      max-height: 300px;
+      padding: 6px 20px;
+    }
+
+    .pending-request {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 4px 0;
+      font-size: 0.8rem;
+      color: #ffd700;
+    }
+
+    .pending-request .pending-info {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .pending-request .pending-name {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .pending-request .pending-ip {
+      color: #8892b0;
+      font-family: 'Cascadia Code', monospace;
+      font-size: 0.75rem;
+    }
+
+    .pending-request button.accept-btn {
+      background: #0a3d2a;
+      border-color: #00ff8844;
+      color: var(--text);
+      padding: 3px 10px;
+      font-size: 0.7rem;
+    }
+
+    .pending-request button.accept-btn:hover {
+      background: #0d5a3a;
+    }
+
+    .pending-request button.reject-btn {
+      background: #3d0a0a;
+      border-color: #e74c3c44;
+      color: var(--danger);
+      padding: 3px 10px;
+      font-size: 0.7rem;
+    }
+
+    .pending-request button.reject-btn:hover {
+      background: #5a1a1a;
+    }
+
     .permission-badge {
       display: inline-flex;
       align-items: center;
@@ -423,6 +593,7 @@
 
     body.peer-mode .remote-bar #shareBtn,
     body.peer-mode .remote-bar .separator,
+    body.peer-mode .remote-bar #peerNameInput,
     body.peer-mode .remote-bar #joinRoomInput,
     body.peer-mode .remote-bar #joinBtn {
       display: none;
@@ -518,13 +689,27 @@
     <label class="checkbox-label" id="allowInputLabel" style="display:none;">
       <input type="checkbox" id="allowRemoteInput" onchange="updatePeerPermissions()"> Allow Remote Input
     </label>
-    <span id="peerCount" style="display:none;" class="peer-badge">0 peers</span>
+    <span style="position:relative;display:inline-flex;align-items:center;">
+      <span id="peerCount" style="display:none;" class="peer-badge clickable" onclick="togglePeerList()">0 peers</span>
+      <div id="peerListPanel" class="peer-list-panel">
+        <div class="peer-list-header">
+          <span>Connected Peers</span>
+          <span id="peerListClose" style="cursor:pointer;color:#8892b0;" onclick="togglePeerList()">&times;</span>
+        </div>
+        <div id="peerListBody"></div>
+      </div>
+    </span>
     <span class="separator">|</span>
+    <input type="text" id="peerNameInput" placeholder="Your Name" maxlength="20" style="width:110px;background:var(--terminal-bg);color:#e0e0e0;border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:0.8rem;outline:none;">
     <input type="text" id="joinRoomInput" placeholder="Room ID" maxlength="6" style="text-transform:uppercase;">
     <button id="joinBtn" onclick="joinSession()">Join Session</button>
     <span id="peerStatus" style="display:none;" class="peer-badge remote-peer">Connected to host</span>
     <span id="permissionStatus" style="display:none;" class="permission-badge view-only">View Only</span>
     <button id="leaveBtn" style="display:none;padding:3px 8px;font-size:0.7rem;" class="disconnect" onclick="disconnectPeer()">Leave</button>
+  </div>
+
+  <div id="pendingBar" class="pending-bar">
+    <div id="pendingList"></div>
   </div>
 
   <div id="terminal-container">
@@ -805,11 +990,14 @@
 
     let peer = null;               // PeerJS instance
     let hostConnections = [];      // Host: array of DataConnections to peers
+    let peerInfoMap = new Map();   // Map<DataConnection, {id, ip, connectedAt, candidates}>
+    let pendingConnections = [];   // Host: connections awaiting approval {conn, id, name, ip}
     let peerConnection = null;     // Peer: DataConnection to host
     let isHost = false;
     let isPeer = false;
     let terminalHistory = '';      // Buffer of all terminal output for new peers
     let canWrite = false;          // Peer: whether host allows input
+    let peerName = '';             // Peer: friendly display name
     let reconnectAttempts = 0;
     let reconnectTimer = null;
     let currentRoomId = null;      // Track active room ID for reconnect
@@ -827,6 +1015,7 @@
           roomId: currentRoomId,
           terminalHistory: terminalHistory.slice(-50000), // cap at 50KB for storage
           allowInput: isHost ? document.getElementById('allowRemoteInput').checked : canWrite,
+          peerName: peerName || '',
           timestamp: Date.now()
         }));
       } catch {}
@@ -1002,36 +1191,290 @@
       const n = hostConnections.length;
       countEl.textContent = n + (n === 1 ? ' peer' : ' peers');
       countEl.style.display = n > 0 ? 'inline-flex' : 'none';
+      // Also refresh the list if visible
+      if (document.getElementById('peerListPanel').classList.contains('visible')) {
+        renderPeerList();
+      }
+      if (n === 0) {
+        document.getElementById('peerListPanel').classList.remove('visible');
+      }
+    }
+
+    function togglePeerList() {
+      const panel = document.getElementById('peerListPanel');
+      panel.classList.toggle('visible');
+      if (panel.classList.contains('visible')) renderPeerList();
+    }
+
+    // Close peer list when clicking outside
+    document.addEventListener('click', (e) => {
+      const panel = document.getElementById('peerListPanel');
+      const badge = document.getElementById('peerCount');
+      if (panel.classList.contains('visible') && !panel.contains(e.target) && e.target !== badge) {
+        panel.classList.remove('visible');
+      }
+    });
+
+    function formatDuration(ms) {
+      const s = Math.floor(ms / 1000);
+      if (s < 60) return s + 's';
+      const m = Math.floor(s / 60);
+      if (m < 60) return m + 'm ' + (s % 60) + 's';
+      const h = Math.floor(m / 60);
+      return h + 'h ' + (m % 60) + 'm';
+    }
+
+    function getPeerLabel(info) {
+      return info.name || info.ip || info.id.replace('serial-console-', '').substring(0, 8);
+    }
+
+    function renderPeerList() {
+      const body = document.getElementById('peerListBody');
+      if (hostConnections.length === 0) {
+        body.innerHTML = '<div class="peer-list-empty">No peers connected</div>';
+        return;
+      }
+      const now = Date.now();
+      body.innerHTML = hostConnections.map((conn, idx) => {
+        const info = peerInfoMap.get(conn) || {};
+        const displayName = info.name || '';
+        const ip = info.ip || 'Resolving...';
+        const duration = info.connectedAt ? formatDuration(now - info.connectedAt) : '—';
+        const peerCanWrite = info.canWrite || false;
+        const permClass = peerCanWrite ? 'rw' : 'ro';
+        const permLabel = peerCanWrite ? 'R/W' : 'View';
+        const nameHtml = displayName
+          ? `<span style="color:var(--accent);font-weight:600;font-size:0.8rem;">${displayName}</span>`
+          : '';
+        return `<div class="peer-list-item">
+          ${nameHtml}
+          <span class="peer-ip">${ip}</span>
+          <span class="peer-perm ${permClass}" style="cursor:pointer;" onclick="togglePeerWrite(${idx})" title="Click to toggle">${permLabel}</span>
+          <span class="peer-duration">${duration}</span>
+        </div>`;
+      }).join('');
+    }
+
+    // Refresh durations every 10s while panel is open
+    setInterval(() => {
+      if (document.getElementById('peerListPanel').classList.contains('visible')) {
+        renderPeerList();
+      }
+    }, 10000);
+
+    // Extract remote IP from WebRTC stats
+    async function extractRemoteIP(conn) {
+      try {
+        const pc = conn.peerConnection;
+        if (!pc) return null;
+
+        // Method 1: getStats() — look for succeeded candidate pairs
+        const stats = await pc.getStats();
+        for (const [, report] of stats) {
+          if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+            // Find the remote candidate
+            for (const [, r] of stats) {
+              if (r.type === 'remote-candidate' && r.id === report.remoteCandidateId) {
+                if (r.address || r.ip) return r.address || r.ip;
+              }
+            }
+          }
+        }
+
+        // Method 2: Fall back to any remote candidate with a non-mDNS address
+        for (const [, report] of stats) {
+          if (report.type === 'remote-candidate') {
+            const addr = report.address || report.ip;
+            if (addr && !addr.endsWith('.local')) return addr;
+          }
+        }
+
+        return null;
+      } catch (e) {
+        console.warn('[Peers] Failed to extract IP:', e);
+        return null;
+      }
+    }
+
+    // Poll for remote IP (it may not be available immediately)
+    function startIPResolution(conn) {
+      let attempts = 0;
+      const interval = setInterval(async () => {
+        attempts++;
+        const ip = await extractRemoteIP(conn);
+        if (ip) {
+          const info = peerInfoMap.get(conn);
+          if (info) {
+            info.ip = ip;
+            peerInfoMap.set(conn, info);
+          }
+          updatePeerCountUI();
+          clearInterval(interval);
+        } else if (attempts >= 10) {
+          // After ~10s give up resolving
+          const info = peerInfoMap.get(conn);
+          if (info && !info.ip) {
+            info.ip = 'Unknown';
+            peerInfoMap.set(conn, info);
+          }
+          updatePeerCountUI();
+          clearInterval(interval);
+        }
+      }, 1000);
     }
 
     // ---- HOST LOGIC ----
 
     function handleIncomingConnection(conn) {
-      appendToTerminal(`[Remote] Incoming peer connection (serialization: ${conn.serialization}, open: ${conn.open})...\n`, 'remote-msg');
+      appendToTerminal(`[Remote] Incoming peer connection — awaiting approval...\n`, 'remote-msg');
 
-      const handleHostConnOpen = () => {
-        if (hostConnections.includes(conn)) return; // prevent double-fire
-        hostConnections.push(conn);
-        updatePeerCountUI();
-        appendToTerminal(`[Remote] Peer connected (${hostConnections.length} total)\n`, 'remote-msg');
-
-        conn.send({ type: 'history', data: terminalHistory });
-        conn.send({ type: 'status', connected: isConnected, info: portInfo.textContent });
-        const allowInput = document.getElementById('allowRemoteInput').checked;
-        conn.send({ type: 'permission', canWrite: allowInput });
-        saveSession();
+      const pending = {
+        conn: conn,
+        id: conn.peer || 'unknown',
+        name: null,
+        ip: null,
+        ready: false
       };
 
-      conn.on('open', handleHostConnOpen);
-      if (conn.open) handleHostConnOpen();
+      const handlePendingOpen = () => {
+        if (pending.ready) return;
+        pending.ready = true;
 
+        // Ask the peer to identify itself
+        conn.send({ type: 'pending', message: 'Waiting for host approval...' });
+
+        // Listen for identify before acceptance
+        conn.on('data', (msg) => {
+          try {
+            const data = (typeof msg === 'string') ? JSON.parse(msg) : msg;
+            if (data.type === 'identify' && data.name) {
+              pending.name = data.name.substring(0, 20);
+              renderPendingList();
+            }
+          } catch {}
+        });
+
+        // Try to resolve IP early
+        resolveIPForPending(conn, pending);
+
+        pendingConnections.push(pending);
+        renderPendingList();
+        appendToTerminal(`[Remote] Peer "${pending.name || pending.id}" is waiting for approval.\n`, 'remote-msg');
+      };
+
+      conn.on('open', handlePendingOpen);
+      if (conn.open) handlePendingOpen();
+
+      conn.on('close', () => {
+        pendingConnections = pendingConnections.filter(p => p !== pending);
+        renderPendingList();
+      });
+
+      conn.on('error', () => {
+        pendingConnections = pendingConnections.filter(p => p !== pending);
+        renderPendingList();
+      });
+    }
+
+    async function resolveIPForPending(conn, pending) {
+      for (let i = 0; i < 10; i++) {
+        const ip = await extractRemoteIP(conn);
+        if (ip) {
+          pending.ip = ip;
+          renderPendingList();
+          return;
+        }
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      pending.ip = 'Unknown';
+      renderPendingList();
+    }
+
+    function renderPendingList() {
+      const bar = document.getElementById('pendingBar');
+      const list = document.getElementById('pendingList');
+
+      if (pendingConnections.length === 0) {
+        bar.classList.remove('has-pending');
+        list.innerHTML = '';
+        return;
+      }
+
+      bar.classList.add('has-pending');
+      list.innerHTML = pendingConnections.map((p, idx) => {
+        const name = p.name || '';
+        const ip = p.ip || 'Resolving...';
+        const nameHtml = name ? `<span class="pending-name">${name}</span>` : '';
+        return `<div class="pending-request">
+          <span style="color:#ffd700;">&#9888;</span>
+          <span class="pending-info">
+            ${nameHtml}
+            <span class="pending-ip">${ip}</span>
+            <span style="color:#8892b0;font-size:0.65rem;">wants to join</span>
+          </span>
+          <button class="accept-btn" onclick="acceptPeer(${idx})">Accept</button>
+          <button class="reject-btn" onclick="rejectPeer(${idx})">Reject</button>
+        </div>`;
+      }).join('');
+    }
+
+    function acceptPeer(index) {
+      const pending = pendingConnections[index];
+      if (!pending) return;
+      const conn = pending.conn;
+
+      // Remove from pending
+      pendingConnections.splice(index, 1);
+      renderPendingList();
+
+      // Promote to full connection
+      if (hostConnections.includes(conn)) return;
+      hostConnections.push(conn);
+
+      const globalAllow = document.getElementById('allowRemoteInput').checked;
+      peerInfoMap.set(conn, {
+        id: pending.id,
+        name: pending.name || null,
+        ip: pending.ip || null,
+        connectedAt: Date.now(),
+        canWrite: globalAllow
+      });
+
+      // Continue IP resolution if not yet resolved
+      if (!pending.ip || pending.ip === 'Unknown' || pending.ip === 'Resolving...') {
+        startIPResolution(conn);
+      }
+
+      updatePeerCountUI();
+      const label = pending.name || pending.ip || pending.id;
+      appendToTerminal(`[Remote] ${label} accepted — peer connected (${hostConnections.length} total)\n`, 'remote-msg');
+
+      // Send session data to the now-accepted peer
+      conn.send({ type: 'accepted' });
+      conn.send({ type: 'history', data: terminalHistory });
+      conn.send({ type: 'status', connected: isConnected, info: portInfo.textContent });
+      conn.send({ type: 'permission', canWrite: globalAllow });
+      saveSession();
+
+      // Replace the pending data listener with the real one
+      // PeerJS uses EventEmitter — removeAllListeners is safe here
+      try { conn.removeAllListeners('data'); } catch { try { conn.off('data'); } catch {} }
       conn.on('data', (msg) => {
         try {
           const data = (typeof msg === 'string') ? JSON.parse(msg) : msg;
-          if (data.type === 'command' && document.getElementById('allowRemoteInput').checked) {
-            if (isConnected && port && port.writable) {
-              sendData(data.data);
-              appendToTerminal(`${data.data}`, 'remote-msg');
+          if (data.type === 'identify') {
+            const info = peerInfoMap.get(conn);
+            if (info && data.name) {
+              info.name = data.name.substring(0, 20);
+              updatePeerCountUI();
+            }
+          } else if (data.type === 'command') {
+            const peerInfo = peerInfoMap.get(conn);
+            if (peerInfo && peerInfo.canWrite) {
+              if (isConnected && port && port.writable) {
+                sendData(data.data);
+                appendToTerminal(`${data.data}`, 'remote-msg');
+              }
             }
           }
         } catch (e) {
@@ -1039,17 +1482,42 @@
         }
       });
 
+      // Replace close/error handlers
+      try { conn.removeAllListeners('close'); } catch { try { conn.off('close'); } catch {} }
+      try { conn.removeAllListeners('error'); } catch { try { conn.off('error'); } catch {} }
       conn.on('close', () => {
+        const info = peerInfoMap.get(conn);
+        const closeLabel = info ? (info.name || info.ip || 'unknown') : '';
+        peerInfoMap.delete(conn);
         hostConnections = hostConnections.filter(c => c !== conn);
         updatePeerCountUI();
-        appendToTerminal(`[Remote] Peer disconnected (${hostConnections.length} remaining)\n`, 'remote-msg');
+        appendToTerminal(`[Remote] ${closeLabel ? closeLabel + ' ' : 'Peer '}disconnected (${hostConnections.length} remaining)\n`, 'remote-msg');
       });
-
       conn.on('error', (err) => {
         appendToTerminal(`[Remote Error] Host conn error: ${err}\n`, 'error-msg');
+        peerInfoMap.delete(conn);
         hostConnections = hostConnections.filter(c => c !== conn);
         updatePeerCountUI();
       });
+    }
+
+    function rejectPeer(index) {
+      const pending = pendingConnections[index];
+      if (!pending) return;
+      const conn = pending.conn;
+      const label = pending.name || pending.ip || pending.id;
+
+      // Notify peer they were rejected
+      try { conn.send({ type: 'rejected', message: 'Connection rejected by host.' }); } catch {}
+
+      // Close after a short delay so the message arrives
+      setTimeout(() => {
+        try { conn.close(); } catch {}
+      }, 500);
+
+      pendingConnections.splice(index, 1);
+      renderPendingList();
+      appendToTerminal(`[Remote] ${label} — connection rejected.\n`, 'remote-msg');
     }
 
     function startSharing() {
@@ -1101,10 +1569,18 @@
     function stopSharing() {
       if (!isHost) return;
       cancelReconnect();
+      // Close pending connections
+      pendingConnections.forEach(p => {
+        try { p.conn.close(); } catch {}
+      });
+      pendingConnections = [];
+      renderPendingList();
+      // Close accepted connections
       hostConnections.forEach(conn => {
         try { conn.close(); } catch {}
       });
       hostConnections = [];
+      peerInfoMap.clear();
       if (peer) { peer.destroy(); peer = null; }
       isHost = false;
       currentRoomId = null;
@@ -1128,33 +1604,49 @@
 
     function updatePeerPermissions() {
       const allowInput = document.getElementById('allowRemoteInput').checked;
-      const msg = { type: 'permission', canWrite: allowInput };
       hostConnections.forEach(conn => {
-        try { conn.send(msg); } catch {}
+        const info = peerInfoMap.get(conn);
+        if (info) info.canWrite = allowInput;
+        try { conn.send({ type: 'permission', canWrite: allowInput }); } catch {}
       });
-      appendToTerminal(`[Remote] Remote input ${allowInput ? 'enabled' : 'disabled'}.\n`, 'remote-msg');
+      appendToTerminal(`[Remote] Remote input ${allowInput ? 'enabled' : 'disabled'} for all peers.\n`, 'remote-msg');
+      if (document.getElementById('peerListPanel').classList.contains('visible')) renderPeerList();
+    }
+
+    // Toggle write permission for a single peer by index
+    function togglePeerWrite(index) {
+      const conn = hostConnections[index];
+      if (!conn) return;
+      const info = peerInfoMap.get(conn);
+      if (!info) return;
+      info.canWrite = !info.canWrite;
+      try { conn.send({ type: 'permission', canWrite: info.canWrite }); } catch {}
+      appendToTerminal(`[Remote] ${getPeerLabel(info)}: input ${info.canWrite ? 'enabled' : 'disabled'}.\n`, 'remote-msg');
+      renderPeerList();
     }
 
     // ---- PEER LOGIC ----
 
     function setupPeerConnectionHandlers(conn, roomId, timeoutId) {
+      let peerApproved = false;
+
       const handlePeerConnOpen = () => {
-        if (isPeer) return;
-        if (timeoutId) clearTimeout(timeoutId);
-        isPeer = true;
-        currentRoomId = roomId;
-        reconnectAttempts = 0;
+        if (isPeer || peerApproved) return;
+        // Don't set isPeer yet — we're in "pending approval" state
+
+        // Send identify immediately so host can see our name
+        if (peerName) {
+          conn.send({ type: 'identify', name: peerName });
+        }
+
+        appendToTerminal(`[Remote] Connected to host — waiting for approval...\n`, 'remote-msg');
         document.getElementById('peerStatus').style.display = 'inline-flex';
-        document.getElementById('permissionStatus').style.display = 'inline-flex';
+        document.getElementById('peerStatus').textContent = 'Waiting for approval...';
+        document.getElementById('peerStatus').style.borderColor = '#ffd700';
+        document.getElementById('peerStatus').style.color = '#ffd700';
+        document.getElementById('peerStatus').style.background = '#3d2a0a';
         document.getElementById('shareBtn').disabled = true;
-        document.getElementById('joinRoomInput').disabled = true;
-
-        document.body.classList.add('peer-mode');
-        document.getElementById('connectBtn').style.display = 'none';
-
         document.getElementById('leaveBtn').style.display = '';
-        appendToTerminal(`[Remote] Connected to host session ${roomId}!\n`, 'remote-msg');
-        saveSession();
       };
 
       conn.on('open', handlePeerConnOpen);
@@ -1164,6 +1656,41 @@
         try {
           const msg = (typeof raw === 'string') ? JSON.parse(raw) : raw;
           switch (msg.type) {
+            case 'pending':
+              // Host acknowledged, still waiting
+              appendToTerminal(`[Remote] ${msg.message || 'Waiting for host approval...'}\n`, 'remote-msg');
+              break;
+            case 'accepted':
+              // Host approved us!
+              if (timeoutId) clearTimeout(timeoutId);
+              peerApproved = true;
+              isPeer = true;
+              currentRoomId = roomId;
+              reconnectAttempts = 0;
+
+              document.getElementById('peerStatus').textContent = 'Connected to host';
+              document.getElementById('peerStatus').style.borderColor = '';
+              document.getElementById('peerStatus').style.color = '';
+              document.getElementById('peerStatus').style.background = '';
+              document.getElementById('permissionStatus').style.display = 'inline-flex';
+              document.getElementById('joinRoomInput').disabled = true;
+
+              document.body.classList.add('peer-mode');
+              document.getElementById('connectBtn').style.display = 'none';
+
+              appendToTerminal(`[Remote] Host accepted your connection!\n`, 'remote-msg');
+              saveSession();
+              break;
+            case 'rejected':
+              appendToTerminal(`[Remote] ${msg.message || 'Connection rejected by host.'}\n`, 'error-msg');
+              // Clean up
+              document.getElementById('peerStatus').style.display = 'none';
+              document.getElementById('leaveBtn').style.display = 'none';
+              document.getElementById('shareBtn').disabled = false;
+              document.getElementById('joinBtn').disabled = false;
+              document.getElementById('joinRoomInput').disabled = false;
+              if (timeoutId) clearTimeout(timeoutId);
+              break;
             case 'terminal':
               _origAppend(msg.data, msg.className);
               break;
@@ -1192,9 +1719,14 @@
       conn.on('close', () => {
         const wasConnected = isPeer;
         isPeer = false;
+        peerApproved = false;
         canWrite = false;
         peerConnection = null;
         document.getElementById('peerStatus').style.display = 'none';
+        document.getElementById('peerStatus').textContent = 'Connected to host';
+        document.getElementById('peerStatus').style.borderColor = '';
+        document.getElementById('peerStatus').style.color = '';
+        document.getElementById('peerStatus').style.background = '';
         document.getElementById('permissionStatus').style.display = 'none';
         sendInputEl.disabled = true;
         sendBtn.disabled = true;
@@ -1209,6 +1741,7 @@
           document.getElementById('joinBtn').disabled = false;
           document.getElementById('joinRoomInput').disabled = false;
           document.getElementById('connectBtn').style.display = '';
+          document.getElementById('leaveBtn').style.display = 'none';
         }
       });
 
@@ -1245,6 +1778,9 @@
         appendToTerminal('[Remote] Please enter a valid 6-character Room ID.\n', 'error-msg');
         return;
       }
+
+      // Capture friendly name
+      peerName = document.getElementById('peerNameInput').value.trim().substring(0, 20);
 
       const peerId = 'serial-console-' + roomId;
       document.getElementById('joinBtn').disabled = true;
@@ -1343,6 +1879,7 @@
         reconnectHost(session.roomId);
       } else if (session.role === 'peer') {
         canWrite = session.allowInput || false;
+        peerName = session.peerName || '';
         reconnectPeer(session.roomId);
       }
     })();
