@@ -362,7 +362,7 @@
     <label class="checkbox-label">
       <input type="checkbox" id="autoScroll" checked> Auto-scroll
     </label>
-    <button id="sendBtn" disabled onclick="sendInput()">Send</button>
+    <button id="sendBtn" disabled onclick="handleSend()">Send</button>
   </div>
 
   <footer>
@@ -380,7 +380,7 @@
 
     const terminal = document.getElementById('terminal');
     const connectBtn = document.getElementById('connectBtn');
-    const sendInput = document.getElementById('sendInput');
+    const sendInputEl = document.getElementById('sendInput');
     const sendBtn = document.getElementById('sendBtn');
     const statusDot = document.getElementById('statusDot');
     const statusText = document.getElementById('statusText');
@@ -412,7 +412,7 @@
       connectBtn.className = connected ? 'disconnect' : 'connect';
       sendInput.disabled = !connected;
       sendBtn.disabled = !connected;
-      if (connected) sendInput.focus();
+      if (connected) sendInputEl.focus();
     }
 
     async function toggleConnection() {
@@ -519,9 +519,8 @@
       }
     }
 
-    function sendInput() {
-      const input = document.getElementById('sendInput');
-      const text = input.value;
+    function handleSend() {
+      const text = sendInputEl.value;
       if (!text && !document.getElementById('lineEnding').value) return;
 
       const lineEnding = document.getElementById('lineEnding').value
@@ -529,15 +528,15 @@
         .replace('\\n', '\n');
 
       sendData(text + lineEnding);
-      input.value = '';
-      input.focus();
+      sendInputEl.value = '';
+      sendInputEl.focus();
     }
 
     // Keyboard handling
-    document.getElementById('sendInput').addEventListener('keydown', (e) => {
+    sendInputEl.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
-        sendInput();
+        handleSend();
       }
     });
 
