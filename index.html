@@ -760,9 +760,10 @@
       });
 
       peer.on('connection', (conn) => {
-        appendToTerminal(`[Remote] Incoming peer connection (serialization: ${conn.serialization})...\n`, 'remote-msg');
+        appendToTerminal(`[Remote] Incoming peer connection (serialization: ${conn.serialization}, open: ${conn.open})...\n`, 'remote-msg');
 
-        conn.on('open', () => {
+        const handleHostConnOpen = () => {
+          if (hostConnections.includes(conn)) return; // prevent double-fire
           hostConnections.push(conn);
           updatePeerCountUI();
           appendToTerminal(`[Remote] Peer connected (${hostConnections.length} total)\n`, 'remote-msg');
@@ -780,11 +781,14 @@
           // Send current permission
           const allowInput = document.getElementById('allowRemoteInput').checked;
           conn.send({ type: 'permission', canWrite: allowInput });
-        });
+        };
+
+        conn.on('open', handleHostConnOpen);
+        // Race condition fix: open may have already fired before listener attached
+        if (conn.open) handleHostConnOpen();
 
         conn.on('data', (msg) => {
           try {
-            // msg is already an object when using json serialization
             const data = (typeof msg === 'string') ? JSON.parse(msg) : msg;
             if (data.type === 'command' && document.getElementById('allowRemoteInput').checked) {
               if (isConnected && port && port.writable) {
@@ -803,7 +807,8 @@
           appendToTerminal(`[Remote] Peer disconnected (${hostConnections.length} remaining)\n`, 'remote-msg');
         });
 
-        conn.on('error', () => {
+        conn.on('error', (err) => {
+          appendToTerminal(`[Remote Error] Host conn error: ${err}\n`, 'error-msg');
           hostConnections = hostConnections.filter(c => c !== conn);
           updatePeerCountUI();
         });
@@ -880,7 +885,8 @@
           }
         }, 15000);
 
-        peerConnection.on('open', () => {
+        const handlePeerConnOpen = () => {
+          if (isPeer) return; // prevent double-fire
           clearTimeout(joinTimeout);
           isPeer = true;
           document.getElementById('peerStatus').style.display = 'inline-flex';
@@ -894,7 +900,11 @@
           document.querySelector('.toolbar button:last-child').style.display = 'none'; // Clear btn
 
           appendToTerminal(`[Remote] Connected to host session ${roomId}!\n`, 'remote-msg');
-        });
+        };
+
+        peerConnection.on('open', handlePeerConnOpen);
+        // Race condition fix: open may have already fired
+        if (peerConnection.open) handlePeerConnOpen();
 
         peerConnection.on('data', (raw) => {
           try {
