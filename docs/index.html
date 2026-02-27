@@ -684,6 +684,7 @@
     <span id="roomIdContainer" style="display:none;">
       Room: <span class="room-id-display" id="roomIdDisplay" title="Click to copy" onclick="copyRoomId()"></span>
       <button onclick="copyRoomId()" style="padding:3px 8px;font-size:0.7rem;">Copy</button>
+      <button onclick="generateInviteLink()" style="padding:3px 8px;font-size:0.7rem;">Invite Link</button>
       <button onclick="stopSharing()" class="disconnect" style="padding:3px 8px;font-size:0.7rem;">Stop</button>
     </span>
     <label class="checkbox-label" id="allowInputLabel" style="display:none;">
@@ -992,6 +993,10 @@
     let hostConnections = [];      // Host: array of DataConnections to peers
     let peerInfoMap = new Map();   // Map<DataConnection, {id, ip, connectedAt, candidates}>
     let pendingConnections = [];   // Host: connections awaiting approval {conn, id, name, ip}
+    let approvedSessionKeys = new Map(); // Host: sessionKey -> {name, approvedAt}
+    let inviteTokens = new Map();        // Host: token -> {createdAt, used}
+    let peerSessionKey = null;     // Peer: session key received from host
+    let peerInviteToken = null;    // Peer: one-time invite token from URL
     let peerConnection = null;     // Peer: DataConnection to host
     let isHost = false;
     let isPeer = false;
@@ -1016,6 +1021,7 @@
           terminalHistory: terminalHistory.slice(-50000), // cap at 50KB for storage
           allowInput: isHost ? document.getElementById('allowRemoteInput').checked : canWrite,
           peerName: peerName || '',
+          sessionKey: peerSessionKey || '',
           timestamp: Date.now()
         }));
       } catch {}
@@ -1186,6 +1192,12 @@
       return id;
     }
 
+    function generateSessionKey() {
+      const arr = new Uint8Array(24);
+      crypto.getRandomValues(arr);
+      return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
+    }
+
     function updatePeerCountUI() {
       const countEl = document.getElementById('peerCount');
       const n = hostConnections.length;
@@ -1327,7 +1339,9 @@
     // ---- HOST LOGIC ----
 
     function handleIncomingConnection(conn) {
-      appendToTerminal(`[Remote] Incoming peer connection — awaiting approval...\n`, 'remote-msg');
+      appendToTerminal(`[Remote] Incoming peer connection...\n`, 'remote-msg');
+
+      let handled = false;
 
       const pending = {
         conn: conn,
@@ -1341,26 +1355,51 @@
         if (pending.ready) return;
         pending.ready = true;
 
-        // Ask the peer to identify itself
+        // Tell peer we're waiting for their identify (which may include a session key)
         conn.send({ type: 'pending', message: 'Waiting for host approval...' });
 
-        // Listen for identify before acceptance
+        // Listen for identify — check for session key to auto-approve
         conn.on('data', (msg) => {
           try {
             const data = (typeof msg === 'string') ? JSON.parse(msg) : msg;
-            if (data.type === 'identify' && data.name) {
-              pending.name = data.name.substring(0, 20);
+            if (data.type === 'identify') {
+              if (data.name) pending.name = data.name.substring(0, 20);
+
+              // Check for valid session key — auto-approve returning peers
+              if (!handled && data.sessionKey && approvedSessionKeys.has(data.sessionKey)) {
+                handled = true;
+                const savedInfo = approvedSessionKeys.get(data.sessionKey);
+                appendToTerminal(`[Remote] ${pending.name || savedInfo.name || 'Peer'} reconnected with valid session key — auto-approved.\n`, 'remote-msg');
+                autoAcceptPeer(conn, pending, data.sessionKey);
+                return;
+              }
+
+              // Check for valid one-time invite token
+              if (!handled && data.inviteToken && inviteTokens.has(data.inviteToken)) {
+                const invite = inviteTokens.get(data.inviteToken);
+                if (!invite.used) {
+                  handled = true;
+                  invite.used = true;
+                  appendToTerminal(`[Remote] ${pending.name || 'Peer'} joined via invite link — auto-approved.\n`, 'remote-msg');
+                  autoAcceptPeer(conn, pending, null);
+                  return;
+                }
+              }
+
               renderPendingList();
             }
           } catch {}
         });
 
-        // Try to resolve IP early
-        resolveIPForPending(conn, pending);
-
-        pendingConnections.push(pending);
-        renderPendingList();
-        appendToTerminal(`[Remote] Peer "${pending.name || pending.id}" is waiting for approval.\n`, 'remote-msg');
+        // Brief delay to allow identify+sessionKey to arrive before showing pending UI
+        setTimeout(() => {
+          if (!handled) {
+            resolveIPForPending(conn, pending);
+            pendingConnections.push(pending);
+            renderPendingList();
+            appendToTerminal(`[Remote] Peer "${pending.name || pending.id}" is waiting for approval.\n`, 'remote-msg');
+          }
+        }, 500);
       };
 
       conn.on('open', handlePendingOpen);
@@ -1374,6 +1413,81 @@
       conn.on('error', () => {
         pendingConnections = pendingConnections.filter(p => p !== pending);
         renderPendingList();
+      });
+    }
+
+    // Auto-accept a peer that presented a valid session key
+    function autoAcceptPeer(conn, pending, sessionKey) {
+      // Remove from pending if it got added
+      pendingConnections = pendingConnections.filter(p => p !== pending);
+      renderPendingList();
+
+      if (hostConnections.includes(conn)) return;
+      hostConnections.push(conn);
+
+      const globalAllow = document.getElementById('allowRemoteInput').checked;
+      peerInfoMap.set(conn, {
+        id: pending.id,
+        name: pending.name || null,
+        ip: pending.ip || null,
+        connectedAt: Date.now(),
+        canWrite: globalAllow,
+        sessionKey: sessionKey
+      });
+
+      startIPResolution(conn);
+      updatePeerCountUI();
+
+      const label = pending.name || pending.ip || pending.id;
+      appendToTerminal(`[Remote] ${label} connected (${hostConnections.length} total)\n`, 'remote-msg');
+
+      // Send session data — include the same session key back
+      conn.send({ type: 'accepted', sessionKey: sessionKey });
+      conn.send({ type: 'history', data: terminalHistory });
+      conn.send({ type: 'status', connected: isConnected, info: portInfo.textContent });
+      conn.send({ type: 'permission', canWrite: globalAllow });
+      saveSession();
+
+      // Set up real data listener
+      try { conn.removeAllListeners('data'); } catch { try { conn.off('data'); } catch {} }
+      conn.on('data', (msg) => {
+        try {
+          const data = (typeof msg === 'string') ? JSON.parse(msg) : msg;
+          if (data.type === 'identify') {
+            const info = peerInfoMap.get(conn);
+            if (info && data.name) {
+              info.name = data.name.substring(0, 20);
+              updatePeerCountUI();
+            }
+          } else if (data.type === 'command') {
+            const peerInfo = peerInfoMap.get(conn);
+            if (peerInfo && peerInfo.canWrite) {
+              if (isConnected && port && port.writable) {
+                sendData(data.data);
+                appendToTerminal(`${data.data}`, 'remote-msg');
+              }
+            }
+          }
+        } catch (e) {
+          console.error('[Remote] Failed to parse peer data:', e);
+        }
+      });
+
+      try { conn.removeAllListeners('close'); } catch { try { conn.off('close'); } catch {} }
+      try { conn.removeAllListeners('error'); } catch { try { conn.off('error'); } catch {} }
+      conn.on('close', () => {
+        const info = peerInfoMap.get(conn);
+        const closeLabel = info ? (info.name || info.ip || 'unknown') : '';
+        peerInfoMap.delete(conn);
+        hostConnections = hostConnections.filter(c => c !== conn);
+        updatePeerCountUI();
+        appendToTerminal(`[Remote] ${closeLabel ? closeLabel + ' ' : 'Peer '}disconnected (${hostConnections.length} remaining)\n`, 'remote-msg');
+      });
+      conn.on('error', (err) => {
+        appendToTerminal(`[Remote Error] Host conn error: ${err}\n`, 'error-msg');
+        peerInfoMap.delete(conn);
+        hostConnections = hostConnections.filter(c => c !== conn);
+        updatePeerCountUI();
       });
     }
 
@@ -1432,13 +1546,21 @@
       if (hostConnections.includes(conn)) return;
       hostConnections.push(conn);
 
+      // Generate a session key for this peer so they can reconnect without re-approval
+      const sessionKey = generateSessionKey();
+      approvedSessionKeys.set(sessionKey, {
+        name: pending.name || null,
+        approvedAt: Date.now()
+      });
+
       const globalAllow = document.getElementById('allowRemoteInput').checked;
       peerInfoMap.set(conn, {
         id: pending.id,
         name: pending.name || null,
         ip: pending.ip || null,
         connectedAt: Date.now(),
-        canWrite: globalAllow
+        canWrite: globalAllow,
+        sessionKey: sessionKey
       });
 
       // Continue IP resolution if not yet resolved
@@ -1450,8 +1572,8 @@
       const label = pending.name || pending.ip || pending.id;
       appendToTerminal(`[Remote] ${label} accepted — peer connected (${hostConnections.length} total)\n`, 'remote-msg');
 
-      // Send session data to the now-accepted peer
-      conn.send({ type: 'accepted' });
+      // Send session data to the now-accepted peer — include session key
+      conn.send({ type: 'accepted', sessionKey: sessionKey });
       conn.send({ type: 'history', data: terminalHistory });
       conn.send({ type: 'status', connected: isConnected, info: portInfo.textContent });
       conn.send({ type: 'permission', canWrite: globalAllow });
@@ -1582,6 +1704,8 @@
       });
       hostConnections = [];
       peerInfoMap.clear();
+      approvedSessionKeys.clear();
+      inviteTokens.clear();
       if (peer) { peer.destroy(); peer = null; }
       isHost = false;
       currentRoomId = null;
@@ -1600,6 +1724,28 @@
       const roomId = document.getElementById('roomIdDisplay').textContent;
       navigator.clipboard.writeText(roomId).then(() => {
         appendToTerminal(`[Remote] Room ID "${roomId}" copied to clipboard.\n`, 'remote-msg');
+      });
+    }
+
+    function generateInviteToken() {
+      const arr = new Uint8Array(16);
+      crypto.getRandomValues(arr);
+      return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    function generateInviteLink() {
+      if (!isHost || !currentRoomId) return;
+      const token = generateInviteToken();
+      inviteTokens.set(token, { createdAt: Date.now(), used: false });
+
+      const baseUrl = window.location.href.split('#')[0];
+      const link = `${baseUrl}#join=${currentRoomId}&token=${token}`;
+
+      navigator.clipboard.writeText(link).then(() => {
+        appendToTerminal(`[Remote] One-time invite link copied to clipboard.\n`, 'remote-msg');
+      }).catch(() => {
+        // Fallback if clipboard fails
+        appendToTerminal(`[Remote] Invite link: ${link}\n`, 'remote-msg');
       });
     }
 
@@ -1632,6 +1778,11 @@
       const info = peerInfoMap.get(conn);
       const label = info ? getPeerLabel(info) : 'Peer';
 
+      // Revoke their session key so they can't auto-rejoin
+      if (info && info.sessionKey) {
+        approvedSessionKeys.delete(info.sessionKey);
+      }
+
       // Notify peer they were kicked
       try { conn.send({ type: 'kicked', message: 'You have been disconnected by the host.' }); } catch {}
 
@@ -1657,10 +1808,12 @@
         // The host approval has no time limit; peer can leave manually
         if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
 
-        // Send identify immediately so host can see our name
-        if (peerName) {
-          conn.send({ type: 'identify', name: peerName });
-        }
+        // Send identify with name, session key, and/or invite token
+        const identifyMsg = { type: 'identify' };
+        if (peerName) identifyMsg.name = peerName;
+        if (peerSessionKey) identifyMsg.sessionKey = peerSessionKey;
+        if (peerInviteToken) { identifyMsg.inviteToken = peerInviteToken; peerInviteToken = null; }
+        conn.send(identifyMsg);
 
         appendToTerminal(`[Remote] Connected to host — waiting for approval...\n`, 'remote-msg');
         document.getElementById('peerStatus').style.display = 'inline-flex';
@@ -1690,6 +1843,11 @@
               isPeer = true;
               currentRoomId = roomId;
               reconnectAttempts = 0;
+
+              // Store session key for future reconnects
+              if (msg.sessionKey) {
+                peerSessionKey = msg.sessionKey;
+              }
 
               document.getElementById('peerStatus').textContent = 'Connected to host';
               document.getElementById('peerStatus').style.borderColor = '';
@@ -1721,6 +1879,7 @@
               peerApproved = false;
               currentRoomId = null;
               canWrite = false;
+              peerSessionKey = null; // Revoked by host
               clearSession();
               break;
             case 'terminal':
@@ -1787,6 +1946,7 @@
       isPeer = false;
       canWrite = false;
       currentRoomId = null;
+      peerSessionKey = null;
       clearSession();
       if (peerConnection) { try { peerConnection.close(); } catch {} peerConnection = null; }
       if (peer) { try { peer.destroy(); } catch {} peer = null; }
@@ -1872,15 +2032,47 @@
     });
 
     // =============================================
-    // Session Restore on Page Load
+    // Invite Link Auto-Join + Session Restore
     // =============================================
 
+    function parseInviteHash() {
+      const hash = window.location.hash;
+      if (!hash || !hash.includes('join=')) return null;
+      const params = new URLSearchParams(hash.substring(1));
+      const roomId = (params.get('join') || '').toUpperCase();
+      const token = params.get('token') || null;
+      if (!roomId || roomId.length !== 6) return null;
+      // Clear the hash so the token isn't visible/reusable from the URL bar
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+      return { roomId, token };
+    }
+
     (function restoreSession() {
+      // Check for invite link first (takes priority over saved session)
+      const invite = parseInviteHash();
+      if (invite) {
+        appendToTerminal('Serial Console - Web Serial API Terminal\n', 'system-msg');
+        appendToTerminal(`[Remote] Joining session via invite link...\n`, 'remote-msg');
+
+        if (!('serial' in navigator)) {
+          connectBtn.disabled = true;
+        }
+
+        // Store the invite token so it's sent with identify
+        peerInviteToken = invite.token;
+
+        // Auto-fill and join
+        document.getElementById('joinRoomInput').value = invite.roomId;
+        // Small delay to ensure PeerJS CDN is ready
+        setTimeout(() => joinSession(), 300);
+        return;
+      }
+
       const session = loadSession();
 
       if (!session || !session.roomId || !session.role) {
-        // No session to restore — show normal welcome
-        appendToTerminal('Serial Console — Web Serial API Terminal\n', 'system-msg');
+        // No session to restore - show normal welcome
+        appendToTerminal('Serial Console - Web Serial API Terminal\n', 'system-msg');
         appendToTerminal('Click "Connect" to select a serial port, or use Remote to share/join.\n\n', 'system-msg');
 
         if (!('serial' in navigator)) {
@@ -1912,6 +2104,7 @@
       } else if (session.role === 'peer') {
         canWrite = session.allowInput || false;
         peerName = session.peerName || '';
+        peerSessionKey = session.sessionKey || null;
         reconnectPeer(session.roomId);
       }
     })();
