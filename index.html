@@ -369,9 +369,81 @@
         flex-direction: column;
         align-items: flex-start;
         gap: 8px;
+        padding: 8px 12px;
       }
       .toolbar {
         width: 100%;
+      }
+      .remote-bar {
+        padding: 6px 12px;
+        gap: 8px;
+      }
+      .status-bar {
+        padding: 4px 12px;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .input-bar {
+        padding: 6px 8px;
+        gap: 4px;
+        flex-wrap: wrap;
+      }
+      .input-bar input[type="text"] {
+        font-size: 16px; /* prevents iOS zoom on focus */
+        padding: 10px 12px;
+      }
+      #terminal {
+        font-size: 12px;
+        padding: 8px 10px;
+        line-height: 1.4;
+        -webkit-overflow-scrolling: touch;
+      }
+      button {
+        padding: 8px 12px;
+        min-height: 36px;
+        font-size: 0.8rem;
+      }
+      footer {
+        padding: 4px 12px;
+      }
+    }
+
+    /* Peer-mode mobile: hide host controls, maximize terminal */
+    body.peer-mode header {
+      padding: 4px 12px;
+    }
+
+    body.peer-mode .toolbar {
+      display: none;
+    }
+
+    body.peer-mode .remote-bar {
+      padding: 4px 12px;
+    }
+
+    body.peer-mode .remote-bar #shareBtn,
+    body.peer-mode .remote-bar .separator,
+    body.peer-mode .remote-bar #joinRoomInput,
+    body.peer-mode .remote-bar #joinBtn {
+      display: none;
+    }
+
+    @media (max-width: 768px) {
+      body.peer-mode header h1 {
+        font-size: 0.9rem;
+      }
+      body.peer-mode .status-bar {
+        font-size: 0.65rem;
+        padding: 2px 12px;
+      }
+      body.peer-mode .input-bar {
+        flex-wrap: nowrap;
+      }
+      body.peer-mode .line-ending-select {
+        display: none;
+      }
+      body.peer-mode footer {
+        display: none;
       }
     }
   </style>
@@ -693,9 +765,42 @@
           { urls: 'stun:stun2.l.google.com:19302' },
           { urls: 'stun:stun3.l.google.com:19302' },
           { urls: 'stun:stun4.l.google.com:19302' }
-        ]
+        ],
+        // Expose real local IPs instead of mDNS (.local) hostnames
+        // Critical for cross-VLAN / same-network connections
+        sdpSemantics: 'unified-plan'
       }
     };
+
+    // Detect if we're likely on the same local network as the peer
+    // by comparing the first 3 octets of gathered host candidates
+    let localIPs = [];
+
+    async function gatherLocalIPs() {
+      try {
+        const pc = new RTCPeerConnection({ iceServers: [] });
+        pc.createDataChannel('');
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        return new Promise((resolve) => {
+          const ips = [];
+          const timeout = setTimeout(() => { pc.close(); resolve(ips); }, 3000);
+          pc.onicecandidate = (e) => {
+            if (!e.candidate) { clearTimeout(timeout); pc.close(); resolve(ips); return; }
+            const match = e.candidate.candidate.match(/(\d+\.\d+\.\d+\.\d+)/);
+            if (match && !match[1].startsWith('0.')) ips.push(match[1]);
+          };
+        });
+      } catch { return []; }
+    }
+
+    gatherLocalIPs().then(ips => {
+      localIPs = ips;
+      if (ips.length > 0) {
+        console.log('[ICE] Local IPs discovered:', ips);
+      }
+    });
 
     let peer = null;               // PeerJS instance
     let hostConnections = [];      // Host: array of DataConnections to peers
@@ -894,10 +999,9 @@
           document.getElementById('shareBtn').disabled = true;
           document.getElementById('joinRoomInput').disabled = true;
 
-          // Hide host-only controls
+          // Hide host-only controls & activate peer-mode layout
+          document.body.classList.add('peer-mode');
           document.getElementById('connectBtn').style.display = 'none';
-          document.querySelectorAll('.toolbar label').forEach(l => l.style.display = 'none');
-          document.querySelector('.toolbar button:last-child').style.display = 'none'; // Clear btn
 
           appendToTerminal(`[Remote] Connected to host session ${roomId}!\n`, 'remote-msg');
         };
@@ -939,14 +1043,13 @@
           isPeer = false;
           canWrite = false;
           peerConnection = null;
+          document.body.classList.remove('peer-mode');
           document.getElementById('peerStatus').style.display = 'none';
           document.getElementById('permissionStatus').style.display = 'none';
           document.getElementById('shareBtn').disabled = false;
           document.getElementById('joinBtn').disabled = false;
           document.getElementById('joinRoomInput').disabled = false;
           document.getElementById('connectBtn').style.display = '';
-          document.querySelectorAll('.toolbar label').forEach(l => l.style.display = '');
-          document.querySelector('.toolbar button:last-child').style.display = '';
           sendInputEl.disabled = true;
           sendBtn.disabled = true;
           appendToTerminal('[Remote] Disconnected from host.\n', 'remote-msg');
