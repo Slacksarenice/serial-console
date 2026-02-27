@@ -1251,6 +1251,7 @@
           <span class="peer-ip">${ip}</span>
           <span class="peer-perm ${permClass}" style="cursor:pointer;" onclick="togglePeerWrite(${idx})" title="Click to toggle">${permLabel}</span>
           <span class="peer-duration">${duration}</span>
+          <span style="cursor:pointer;color:var(--danger);font-size:0.7rem;padding:1px 6px;border:1px solid var(--danger);border-radius:8px;opacity:0.7;transition:opacity 0.15s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7" onclick="kickPeer(${idx})" title="Kick peer">✕</span>
         </div>`;
       }).join('');
     }
@@ -1625,6 +1626,26 @@
       renderPeerList();
     }
 
+    function kickPeer(index) {
+      const conn = hostConnections[index];
+      if (!conn) return;
+      const info = peerInfoMap.get(conn);
+      const label = info ? getPeerLabel(info) : 'Peer';
+
+      // Notify peer they were kicked
+      try { conn.send({ type: 'kicked', message: 'You have been disconnected by the host.' }); } catch {}
+
+      // Close after short delay so message arrives
+      setTimeout(() => {
+        try { conn.close(); } catch {}
+      }, 500);
+
+      peerInfoMap.delete(conn);
+      hostConnections.splice(index, 1);
+      updatePeerCountUI();
+      appendToTerminal(`[Remote] ${label} was kicked.\n`, 'remote-msg');
+    }
+
     // ---- PEER LOGIC ----
 
     function setupPeerConnectionHandlers(conn, roomId, timeoutId) {
@@ -1692,6 +1713,15 @@
               document.getElementById('joinBtn').disabled = false;
               document.getElementById('joinRoomInput').disabled = false;
               if (timeoutId) clearTimeout(timeoutId);
+              break;
+            case 'kicked':
+              appendToTerminal(`[Remote] ${msg.message || 'You were kicked by the host.'}\n`, 'error-msg');
+              // Prevent auto-reconnect by clearing state before close fires
+              isPeer = false;
+              peerApproved = false;
+              currentRoomId = null;
+              canWrite = false;
+              clearSession();
               break;
             case 'terminal':
               _origAppend(msg.data, msg.className);
