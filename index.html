@@ -524,6 +524,7 @@
     <button id="joinBtn" onclick="joinSession()">Join Session</button>
     <span id="peerStatus" style="display:none;" class="peer-badge remote-peer">Connected to host</span>
     <span id="permissionStatus" style="display:none;" class="permission-badge view-only">View Only</span>
+    <button id="leaveBtn" style="display:none;padding:3px 8px;font-size:0.7rem;" class="disconnect" onclick="disconnectPeer()">Leave</button>
   </div>
 
   <div id="terminal-container">
@@ -809,6 +810,167 @@
     let isPeer = false;
     let terminalHistory = '';      // Buffer of all terminal output for new peers
     let canWrite = false;          // Peer: whether host allows input
+    let reconnectAttempts = 0;
+    let reconnectTimer = null;
+    let currentRoomId = null;      // Track active room ID for reconnect
+    const MAX_RECONNECT = 10;
+    const BASE_DELAY = 1000;       // 1s base, doubles each attempt (max ~17 min)
+
+    // =============================================
+    // Session Persistence (sessionStorage)
+    // =============================================
+
+    function saveSession() {
+      try {
+        sessionStorage.setItem('sc_session', JSON.stringify({
+          role: isHost ? 'host' : (isPeer ? 'peer' : null),
+          roomId: currentRoomId,
+          terminalHistory: terminalHistory.slice(-50000), // cap at 50KB for storage
+          allowInput: isHost ? document.getElementById('allowRemoteInput').checked : canWrite,
+          timestamp: Date.now()
+        }));
+      } catch {}
+    }
+
+    function loadSession() {
+      try {
+        const raw = sessionStorage.getItem('sc_session');
+        if (!raw) return null;
+        const session = JSON.parse(raw);
+        // Expire after 30 minutes
+        if (Date.now() - session.timestamp > 30 * 60 * 1000) {
+          sessionStorage.removeItem('sc_session');
+          return null;
+        }
+        return session;
+      } catch { return null; }
+    }
+
+    function clearSession() {
+      try { sessionStorage.removeItem('sc_session'); } catch {}
+    }
+
+    // Auto-save session state periodically
+    setInterval(() => {
+      if (isHost || isPeer) saveSession();
+    }, 5000);
+
+    // Save before unload (refresh/close)
+    window.addEventListener('beforeunload', () => {
+      if (isHost || isPeer) saveSession();
+    });
+
+    // =============================================
+    // Reconnect Logic
+    // =============================================
+
+    function getReconnectDelay() {
+      return Math.min(BASE_DELAY * Math.pow(2, reconnectAttempts), 30000);
+    }
+
+    function scheduleReconnect(role, roomId) {
+      if (reconnectAttempts >= MAX_RECONNECT) {
+        appendToTerminal(`[Remote] Max reconnect attempts reached. Click Share/Join to reconnect manually.\n`, 'error-msg');
+        clearSession();
+        return;
+      }
+      const delay = getReconnectDelay();
+      reconnectAttempts++;
+      appendToTerminal(`[Remote] Reconnecting in ${(delay / 1000).toFixed(0)}s (attempt ${reconnectAttempts}/${MAX_RECONNECT})...\n`, 'remote-msg');
+
+      reconnectTimer = setTimeout(() => {
+        if (role === 'host') {
+          reconnectHost(roomId);
+        } else {
+          reconnectPeer(roomId);
+        }
+      }, delay);
+    }
+
+    function cancelReconnect() {
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      reconnectAttempts = 0;
+    }
+
+    function reconnectHost(roomId) {
+      if (isHost) return; // already reconnected
+      const peerId = 'serial-console-' + roomId;
+      appendToTerminal(`[Remote] Re-establishing host session ${roomId}...\n`, 'remote-msg');
+
+      // Destroy old peer if exists
+      if (peer) { try { peer.destroy(); } catch {} }
+
+      peer = new Peer(peerId, PEER_CONFIG);
+
+      peer.on('open', () => {
+        isHost = true;
+        currentRoomId = roomId;
+        reconnectAttempts = 0;
+        document.getElementById('shareBtn').disabled = true;
+        document.getElementById('roomIdDisplay').textContent = roomId;
+        document.getElementById('roomIdContainer').style.display = 'inline';
+        document.getElementById('allowInputLabel').style.display = 'inline-flex';
+        document.getElementById('joinRoomInput').disabled = true;
+        document.getElementById('joinBtn').disabled = true;
+        appendToTerminal(`[Remote] Host session re-established. Room ID: ${roomId}\n`, 'remote-msg');
+        saveSession();
+      });
+
+      peer.on('connection', handleIncomingConnection);
+
+      peer.on('error', (err) => {
+        appendToTerminal(`[Remote Error] ${err.message}\n`, 'error-msg');
+        if (err.type === 'unavailable-id') {
+          // ID taken — old session still registered, wait and retry
+          appendToTerminal(`[Remote] Room ID still registered on signaling server. Retrying...\n`, 'remote-msg');
+        }
+        isHost = false;
+        scheduleReconnect('host', roomId);
+      });
+
+      peer.on('disconnected', () => {
+        if (isHost) {
+          appendToTerminal(`[Remote] Lost connection to signaling server. Attempting to reconnect...\n`, 'error-msg');
+          // PeerJS has built-in reconnect for signaling
+          try { peer.reconnect(); } catch {
+            isHost = false;
+            scheduleReconnect('host', roomId);
+          }
+        }
+      });
+    }
+
+    function reconnectPeer(roomId) {
+      if (isPeer) return; // already reconnected
+      const peerId = 'serial-console-' + roomId;
+      appendToTerminal(`[Remote] Reconnecting to room ${roomId}...\n`, 'remote-msg');
+
+      // Destroy old peer if exists
+      if (peer) { try { peer.destroy(); } catch {} }
+
+      peer = new Peer(PEER_CONFIG);
+
+      peer.on('open', () => {
+        peerConnection = peer.connect(peerId, { serialization: 'json' });
+
+        const joinTimeout = setTimeout(() => {
+          if (!isPeer) {
+            appendToTerminal('[Remote] Reconnect attempt timed out.\n', 'error-msg');
+            scheduleReconnect('peer', roomId);
+          }
+        }, 15000);
+
+        setupPeerConnectionHandlers(peerConnection, roomId, joinTimeout);
+      });
+
+      peer.on('error', (err) => {
+        appendToTerminal(`[Remote Error] ${err.message}\n`, 'error-msg');
+        if (!isPeer) scheduleReconnect('peer', roomId);
+      });
+    }
 
     // Override appendToTerminal to also capture history and broadcast
     const _origAppend = appendToTerminal;
@@ -844,6 +1006,52 @@
 
     // ---- HOST LOGIC ----
 
+    function handleIncomingConnection(conn) {
+      appendToTerminal(`[Remote] Incoming peer connection (serialization: ${conn.serialization}, open: ${conn.open})...\n`, 'remote-msg');
+
+      const handleHostConnOpen = () => {
+        if (hostConnections.includes(conn)) return; // prevent double-fire
+        hostConnections.push(conn);
+        updatePeerCountUI();
+        appendToTerminal(`[Remote] Peer connected (${hostConnections.length} total)\n`, 'remote-msg');
+
+        conn.send({ type: 'history', data: terminalHistory });
+        conn.send({ type: 'status', connected: isConnected, info: portInfo.textContent });
+        const allowInput = document.getElementById('allowRemoteInput').checked;
+        conn.send({ type: 'permission', canWrite: allowInput });
+        saveSession();
+      };
+
+      conn.on('open', handleHostConnOpen);
+      if (conn.open) handleHostConnOpen();
+
+      conn.on('data', (msg) => {
+        try {
+          const data = (typeof msg === 'string') ? JSON.parse(msg) : msg;
+          if (data.type === 'command' && document.getElementById('allowRemoteInput').checked) {
+            if (isConnected && port && port.writable) {
+              sendData(data.data);
+              appendToTerminal(`${data.data}`, 'remote-msg');
+            }
+          }
+        } catch (e) {
+          console.error('[Remote] Failed to parse peer data:', e);
+        }
+      });
+
+      conn.on('close', () => {
+        hostConnections = hostConnections.filter(c => c !== conn);
+        updatePeerCountUI();
+        appendToTerminal(`[Remote] Peer disconnected (${hostConnections.length} remaining)\n`, 'remote-msg');
+      });
+
+      conn.on('error', (err) => {
+        appendToTerminal(`[Remote Error] Host conn error: ${err}\n`, 'error-msg');
+        hostConnections = hostConnections.filter(c => c !== conn);
+        updatePeerCountUI();
+      });
+    }
+
     function startSharing() {
       if (isHost || isPeer) return;
       const roomId = generateRoomId();
@@ -856,83 +1064,51 @@
 
       peer.on('open', (id) => {
         isHost = true;
+        currentRoomId = roomId;
+        reconnectAttempts = 0;
         document.getElementById('roomIdDisplay').textContent = roomId;
         document.getElementById('roomIdContainer').style.display = 'inline';
         document.getElementById('allowInputLabel').style.display = 'inline-flex';
         document.getElementById('joinRoomInput').disabled = true;
         document.getElementById('joinBtn').disabled = true;
         appendToTerminal(`[Remote] Session shared. Room ID: ${roomId}\n`, 'remote-msg');
+        saveSession();
       });
 
-      peer.on('connection', (conn) => {
-        appendToTerminal(`[Remote] Incoming peer connection (serialization: ${conn.serialization}, open: ${conn.open})...\n`, 'remote-msg');
+      peer.on('connection', handleIncomingConnection);
 
-        const handleHostConnOpen = () => {
-          if (hostConnections.includes(conn)) return; // prevent double-fire
-          hostConnections.push(conn);
-          updatePeerCountUI();
-          appendToTerminal(`[Remote] Peer connected (${hostConnections.length} total)\n`, 'remote-msg');
-
-          // Send terminal history
-          conn.send({ type: 'history', data: terminalHistory });
-
-          // Send current serial status
-          conn.send({
-            type: 'status',
-            connected: isConnected,
-            info: portInfo.textContent
-          });
-
-          // Send current permission
-          const allowInput = document.getElementById('allowRemoteInput').checked;
-          conn.send({ type: 'permission', canWrite: allowInput });
-        };
-
-        conn.on('open', handleHostConnOpen);
-        // Race condition fix: open may have already fired before listener attached
-        if (conn.open) handleHostConnOpen();
-
-        conn.on('data', (msg) => {
-          try {
-            const data = (typeof msg === 'string') ? JSON.parse(msg) : msg;
-            if (data.type === 'command' && document.getElementById('allowRemoteInput').checked) {
-              if (isConnected && port && port.writable) {
-                sendData(data.data);
-                appendToTerminal(`${data.data}`, 'remote-msg');
-              }
-            }
-          } catch (e) {
-            console.error('[Remote] Failed to parse peer data:', e);
+      peer.on('disconnected', () => {
+        if (isHost && currentRoomId) {
+          appendToTerminal(`[Remote] Lost signaling connection. Reconnecting...\n`, 'error-msg');
+          try { peer.reconnect(); } catch {
+            isHost = false;
+            scheduleReconnect('host', currentRoomId);
           }
-        });
-
-        conn.on('close', () => {
-          hostConnections = hostConnections.filter(c => c !== conn);
-          updatePeerCountUI();
-          appendToTerminal(`[Remote] Peer disconnected (${hostConnections.length} remaining)\n`, 'remote-msg');
-        });
-
-        conn.on('error', (err) => {
-          appendToTerminal(`[Remote Error] Host conn error: ${err}\n`, 'error-msg');
-          hostConnections = hostConnections.filter(c => c !== conn);
-          updatePeerCountUI();
-        });
+        }
       });
 
       peer.on('error', (err) => {
         appendToTerminal(`[Remote Error] ${err.message}\n`, 'error-msg');
-        document.getElementById('shareBtn').disabled = false;
+        if (!isHost) {
+          document.getElementById('shareBtn').disabled = false;
+        } else if (currentRoomId) {
+          isHost = false;
+          scheduleReconnect('host', currentRoomId);
+        }
       });
     }
 
     function stopSharing() {
       if (!isHost) return;
+      cancelReconnect();
       hostConnections.forEach(conn => {
         try { conn.close(); } catch {}
       });
       hostConnections = [];
       if (peer) { peer.destroy(); peer = null; }
       isHost = false;
+      currentRoomId = null;
+      clearSession();
 
       document.getElementById('shareBtn').disabled = false;
       document.getElementById('roomIdContainer').style.display = 'none';
@@ -961,6 +1137,107 @@
 
     // ---- PEER LOGIC ----
 
+    function setupPeerConnectionHandlers(conn, roomId, timeoutId) {
+      const handlePeerConnOpen = () => {
+        if (isPeer) return;
+        if (timeoutId) clearTimeout(timeoutId);
+        isPeer = true;
+        currentRoomId = roomId;
+        reconnectAttempts = 0;
+        document.getElementById('peerStatus').style.display = 'inline-flex';
+        document.getElementById('permissionStatus').style.display = 'inline-flex';
+        document.getElementById('shareBtn').disabled = true;
+        document.getElementById('joinRoomInput').disabled = true;
+
+        document.body.classList.add('peer-mode');
+        document.getElementById('connectBtn').style.display = 'none';
+
+        document.getElementById('leaveBtn').style.display = '';
+        appendToTerminal(`[Remote] Connected to host session ${roomId}!\n`, 'remote-msg');
+        saveSession();
+      };
+
+      conn.on('open', handlePeerConnOpen);
+      if (conn.open) handlePeerConnOpen();
+
+      conn.on('data', (raw) => {
+        try {
+          const msg = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+          switch (msg.type) {
+            case 'terminal':
+              _origAppend(msg.data, msg.className);
+              break;
+            case 'history':
+              terminal.innerHTML = '';
+              _origAppend(msg.data);
+              break;
+            case 'status':
+              if (msg.connected) {
+                updateStatus(true, msg.info);
+              }
+              break;
+            case 'permission':
+              canWrite = msg.canWrite;
+              sendInputEl.disabled = !canWrite;
+              sendBtn.disabled = !canWrite;
+              const badge = document.getElementById('permissionStatus');
+              badge.textContent = canWrite ? 'Read/Write' : 'View Only';
+              badge.className = 'permission-badge ' + (canWrite ? 'read-write' : 'view-only');
+              sendInputEl.placeholder = canWrite ? 'Type command and press Enter...' : 'View only — host has not enabled remote input';
+              break;
+          }
+        } catch {}
+      });
+
+      conn.on('close', () => {
+        const wasConnected = isPeer;
+        isPeer = false;
+        canWrite = false;
+        peerConnection = null;
+        document.getElementById('peerStatus').style.display = 'none';
+        document.getElementById('permissionStatus').style.display = 'none';
+        sendInputEl.disabled = true;
+        sendBtn.disabled = true;
+        appendToTerminal('[Remote] Disconnected from host.\n', 'error-msg');
+
+        // Auto-reconnect if we were previously connected
+        if (wasConnected && currentRoomId) {
+          scheduleReconnect('peer', currentRoomId);
+        } else {
+          document.body.classList.remove('peer-mode');
+          document.getElementById('shareBtn').disabled = false;
+          document.getElementById('joinBtn').disabled = false;
+          document.getElementById('joinRoomInput').disabled = false;
+          document.getElementById('connectBtn').style.display = '';
+        }
+      });
+
+      conn.on('error', (err) => {
+        appendToTerminal(`[Remote Error] ${err.message}\n`, 'error-msg');
+      });
+    }
+
+    function disconnectPeer() {
+      cancelReconnect();
+      isPeer = false;
+      canWrite = false;
+      currentRoomId = null;
+      clearSession();
+      if (peerConnection) { try { peerConnection.close(); } catch {} peerConnection = null; }
+      if (peer) { try { peer.destroy(); } catch {} peer = null; }
+      document.body.classList.remove('peer-mode');
+      document.getElementById('peerStatus').style.display = 'none';
+      document.getElementById('permissionStatus').style.display = 'none';
+      document.getElementById('leaveBtn').style.display = 'none';
+      document.getElementById('shareBtn').disabled = false;
+      document.getElementById('joinBtn').disabled = false;
+      document.getElementById('joinRoomInput').disabled = false;
+      document.getElementById('connectBtn').style.display = '';
+      sendInputEl.disabled = true;
+      sendBtn.disabled = true;
+      appendToTerminal('[Remote] Session left.\n', 'remote-msg');
+    }
+
     function joinSession() {
       if (isHost || isPeer) return;
       const roomId = document.getElementById('joinRoomInput').value.trim().toUpperCase();
@@ -979,7 +1256,6 @@
         appendToTerminal(`[Remote] Signaling connected. Reaching out to host...\n`, 'remote-msg');
         peerConnection = peer.connect(peerId, { serialization: 'json' });
 
-        // Timeout if connection doesn't open within 15s
         const joinTimeout = setTimeout(() => {
           if (!isPeer) {
             appendToTerminal('[Remote] Connection timed out. Host may not be sharing.\n', 'error-msg');
@@ -990,79 +1266,14 @@
           }
         }, 15000);
 
-        const handlePeerConnOpen = () => {
-          if (isPeer) return; // prevent double-fire
-          clearTimeout(joinTimeout);
-          isPeer = true;
-          document.getElementById('peerStatus').style.display = 'inline-flex';
-          document.getElementById('permissionStatus').style.display = 'inline-flex';
-          document.getElementById('shareBtn').disabled = true;
-          document.getElementById('joinRoomInput').disabled = true;
-
-          // Hide host-only controls & activate peer-mode layout
-          document.body.classList.add('peer-mode');
-          document.getElementById('connectBtn').style.display = 'none';
-
-          appendToTerminal(`[Remote] Connected to host session ${roomId}!\n`, 'remote-msg');
-        };
-
-        peerConnection.on('open', handlePeerConnOpen);
-        // Race condition fix: open may have already fired
-        if (peerConnection.open) handlePeerConnOpen();
-
-        peerConnection.on('data', (raw) => {
-          try {
-            const msg = (typeof raw === 'string') ? JSON.parse(raw) : raw;
-            switch (msg.type) {
-              case 'terminal':
-                _origAppend(msg.data, msg.className);
-                break;
-              case 'history':
-                terminal.innerHTML = '';
-                _origAppend(msg.data);
-                break;
-              case 'status':
-                if (msg.connected) {
-                  updateStatus(true, msg.info);
-                }
-                break;
-              case 'permission':
-                canWrite = msg.canWrite;
-                sendInputEl.disabled = !canWrite;
-                sendBtn.disabled = !canWrite;
-                const badge = document.getElementById('permissionStatus');
-                badge.textContent = canWrite ? 'Read/Write' : 'View Only';
-                badge.className = 'permission-badge ' + (canWrite ? 'read-write' : 'view-only');
-                sendInputEl.placeholder = canWrite ? 'Type command and press Enter...' : 'View only — host has not enabled remote input';
-                break;
-            }
-          } catch {}
-        });
-
-        peerConnection.on('close', () => {
-          isPeer = false;
-          canWrite = false;
-          peerConnection = null;
-          document.body.classList.remove('peer-mode');
-          document.getElementById('peerStatus').style.display = 'none';
-          document.getElementById('permissionStatus').style.display = 'none';
-          document.getElementById('shareBtn').disabled = false;
-          document.getElementById('joinBtn').disabled = false;
-          document.getElementById('joinRoomInput').disabled = false;
-          document.getElementById('connectBtn').style.display = '';
-          sendInputEl.disabled = true;
-          sendBtn.disabled = true;
-          appendToTerminal('[Remote] Disconnected from host.\n', 'remote-msg');
-        });
-
-        peerConnection.on('error', (err) => {
-          appendToTerminal(`[Remote Error] ${err.message}\n`, 'error-msg');
-        });
+        setupPeerConnectionHandlers(peerConnection, roomId, joinTimeout);
       });
 
       peer.on('error', (err) => {
         appendToTerminal(`[Remote Error] ${err.message}\n`, 'error-msg');
-        document.getElementById('joinBtn').disabled = false;
+        if (!isPeer) {
+          document.getElementById('joinBtn').disabled = false;
+        }
       });
     }
 
@@ -1092,15 +1303,49 @@
       e.target.value = e.target.value.toUpperCase();
     });
 
-    // Initial message
-    appendToTerminal('Serial Console — Web Serial API Terminal\n', 'system-msg');
-    appendToTerminal('Click "Connect" to select a serial port, or use Remote to share/join.\n\n', 'system-msg');
+    // =============================================
+    // Session Restore on Page Load
+    // =============================================
 
-    if (!('serial' in navigator)) {
-      appendToTerminal('[Warning] Web Serial API is not available in this browser.\n', 'error-msg');
-      appendToTerminal('You can still join a remote session using a Room ID.\n', 'system-msg');
-      connectBtn.disabled = true;
-    }
+    (function restoreSession() {
+      const session = loadSession();
+
+      if (!session || !session.roomId || !session.role) {
+        // No session to restore — show normal welcome
+        appendToTerminal('Serial Console — Web Serial API Terminal\n', 'system-msg');
+        appendToTerminal('Click "Connect" to select a serial port, or use Remote to share/join.\n\n', 'system-msg');
+
+        if (!('serial' in navigator)) {
+          appendToTerminal('[Warning] Web Serial API is not available in this browser.\n', 'error-msg');
+          appendToTerminal('You can still join a remote session using a Room ID.\n', 'system-msg');
+          connectBtn.disabled = true;
+        }
+        return;
+      }
+
+      // Restore terminal history
+      if (session.terminalHistory) {
+        terminalHistory = session.terminalHistory;
+        _origAppend(session.terminalHistory);
+      }
+
+      appendToTerminal(`\n[Session] Restoring ${session.role} session for room ${session.roomId}...\n`, 'system-msg');
+
+      if (!('serial' in navigator)) {
+        connectBtn.disabled = true;
+      }
+
+      if (session.role === 'host') {
+        // Restore allow-input state
+        if (session.allowInput) {
+          document.getElementById('allowRemoteInput').checked = true;
+        }
+        reconnectHost(session.roomId);
+      } else if (session.role === 'peer') {
+        canWrite = session.allowInput || false;
+        reconnectPeer(session.roomId);
+      }
+    })();
   </script>
 
 </body>
