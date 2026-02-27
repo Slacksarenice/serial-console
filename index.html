@@ -702,9 +702,9 @@
       }
       // Host: broadcast to all connected peers
       if (isHost && hostConnections.length > 0) {
-        const msg = JSON.stringify({ type: 'terminal', data: text, className: className || null });
+        const msg = { type: 'terminal', data: text, className: className || null };
         hostConnections.forEach(conn => {
-          try { conn.send(msg); } catch {}
+          try { conn.send(msg); } catch (e) { console.error('[Remote] Send error:', e); }
         });
       }
     };
@@ -733,7 +733,7 @@
       document.getElementById('shareBtn').disabled = true;
       appendToTerminal(`[Remote] Starting share session...\n`, 'remote-msg');
 
-      peer = new Peer(peerId, { debug: 0 });
+      peer = new Peer(peerId, { debug: 2 });
 
       peer.on('open', (id) => {
         isHost = true;
@@ -746,37 +746,41 @@
       });
 
       peer.on('connection', (conn) => {
+        appendToTerminal(`[Remote] Incoming peer connection (serialization: ${conn.serialization})...\n`, 'remote-msg');
+
         conn.on('open', () => {
           hostConnections.push(conn);
           updatePeerCountUI();
           appendToTerminal(`[Remote] Peer connected (${hostConnections.length} total)\n`, 'remote-msg');
 
           // Send terminal history
-          conn.send(JSON.stringify({ type: 'history', data: terminalHistory }));
+          conn.send({ type: 'history', data: terminalHistory });
 
           // Send current serial status
-          conn.send(JSON.stringify({
+          conn.send({
             type: 'status',
             connected: isConnected,
             info: portInfo.textContent
-          }));
+          });
 
           // Send current permission
           const allowInput = document.getElementById('allowRemoteInput').checked;
-          conn.send(JSON.stringify({ type: 'permission', canWrite: allowInput }));
+          conn.send({ type: 'permission', canWrite: allowInput });
         });
 
-        conn.on('data', (raw) => {
+        conn.on('data', (msg) => {
           try {
-            const msg = JSON.parse(raw);
-            if (msg.type === 'command' && document.getElementById('allowRemoteInput').checked) {
-              // Peer is sending a command — write to serial
+            // msg is already an object when using json serialization
+            const data = (typeof msg === 'string') ? JSON.parse(msg) : msg;
+            if (data.type === 'command' && document.getElementById('allowRemoteInput').checked) {
               if (isConnected && port && port.writable) {
-                sendData(msg.data);
-                appendToTerminal(`${msg.data}`, 'remote-msg');
+                sendData(data.data);
+                appendToTerminal(`${data.data}`, 'remote-msg');
               }
             }
-          } catch {}
+          } catch (e) {
+            console.error('[Remote] Failed to parse peer data:', e);
+          }
         });
 
         conn.on('close', () => {
@@ -824,7 +828,7 @@
 
     function updatePeerPermissions() {
       const allowInput = document.getElementById('allowRemoteInput').checked;
-      const msg = JSON.stringify({ type: 'permission', canWrite: allowInput });
+      const msg = { type: 'permission', canWrite: allowInput };
       hostConnections.forEach(conn => {
         try { conn.send(msg); } catch {}
       });
@@ -845,12 +849,25 @@
       document.getElementById('joinBtn').disabled = true;
       appendToTerminal(`[Remote] Connecting to room ${roomId}...\n`, 'remote-msg');
 
-      peer = new Peer({ debug: 0 });
+      peer = new Peer({ debug: 2 });
 
       peer.on('open', () => {
-        peerConnection = peer.connect(peerId, { reliable: true });
+        appendToTerminal(`[Remote] Signaling connected. Reaching out to host...\n`, 'remote-msg');
+        peerConnection = peer.connect(peerId, { serialization: 'json' });
+
+        // Timeout if connection doesn't open within 15s
+        const joinTimeout = setTimeout(() => {
+          if (!isPeer) {
+            appendToTerminal('[Remote] Connection timed out. Host may not be sharing.\n', 'error-msg');
+            if (peerConnection) { try { peerConnection.close(); } catch {} }
+            if (peer) { peer.destroy(); peer = null; }
+            peerConnection = null;
+            document.getElementById('joinBtn').disabled = false;
+          }
+        }, 15000);
 
         peerConnection.on('open', () => {
+          clearTimeout(joinTimeout);
           isPeer = true;
           document.getElementById('peerStatus').style.display = 'inline-flex';
           document.getElementById('permissionStatus').style.display = 'inline-flex';
@@ -867,7 +884,7 @@
 
         peerConnection.on('data', (raw) => {
           try {
-            const msg = JSON.parse(raw);
+            const msg = (typeof raw === 'string') ? JSON.parse(raw) : raw;
             switch (msg.type) {
               case 'terminal':
                 _origAppend(msg.data, msg.className);
@@ -927,7 +944,7 @@
     sendData = async function(text) {
       if (isPeer && peerConnection && canWrite) {
         // Send command to host via WebRTC
-        peerConnection.send(JSON.stringify({ type: 'command', data: text }));
+        peerConnection.send({ type: 'command', data: text });
         if (document.getElementById('echoLocal').checked) {
           _origAppend(text, 'sent-msg');
         }
