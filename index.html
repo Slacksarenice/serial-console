@@ -1632,7 +1632,9 @@
 
       const handlePeerConnOpen = () => {
         if (isPeer || peerApproved) return;
-        // Don't set isPeer yet — we're in "pending approval" state
+        // DataChannel is open — cancel the signaling timeout
+        // The host approval has no time limit; peer can leave manually
+        if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
 
         // Send identify immediately so host can see our name
         if (peerName) {
