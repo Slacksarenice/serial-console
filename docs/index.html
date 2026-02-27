@@ -271,6 +271,96 @@
       text-decoration: none;
     }
 
+    /* Help modal */
+    .help-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 999;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .help-overlay.visible {
+      display: flex;
+    }
+
+    .help-modal {
+      background: var(--toolbar-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      max-width: 600px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+      padding: 24px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+
+    .help-modal h2 {
+      color: var(--accent);
+      font-size: 1.1rem;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .help-modal h3 {
+      color: var(--text);
+      font-size: 0.9rem;
+      margin: 14px 0 6px;
+    }
+
+    .help-modal p, .help-modal li {
+      color: #b0b0cc;
+      font-size: 0.8rem;
+      line-height: 1.6;
+      margin-bottom: 6px;
+    }
+
+    .help-modal ul {
+      padding-left: 18px;
+      margin-bottom: 10px;
+    }
+
+    .help-modal code {
+      background: var(--terminal-bg);
+      color: var(--text);
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-family: 'Cascadia Code', monospace;
+      font-size: 0.78rem;
+    }
+
+    .help-modal .close-help {
+      cursor: pointer;
+      color: #8892b0;
+      font-size: 1.2rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .help-modal .close-help:hover {
+      color: var(--danger);
+      background: rgba(231,76,60,0.1);
+    }
+
+    .help-modal::-webkit-scrollbar { width: 6px; }
+    .help-modal::-webkit-scrollbar-track { background: var(--toolbar-bg); }
+    .help-modal::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+
+    /* Section labels */
+    .section-label {
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #4a5580;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
     .remote-bar {
       background: var(--toolbar-bg);
       border-bottom: 1px solid var(--border);
@@ -624,7 +714,7 @@
   <header>
     <h1><span>&gt;_</span> Serial Console</h1>
     <div class="toolbar">
-      <label>Baud:
+      <label title="Serial port communication speed in bits per second">Baud:
         <select id="baudRate">
           <option value="300">300</option>
           <option value="1200">1200</option>
@@ -640,35 +730,36 @@
           <option value="921600">921600</option>
         </select>
       </label>
-      <label>Data Bits:
+      <label title="Number of data bits per frame (usually 8)">Data Bits:
         <select id="dataBits">
           <option value="7">7</option>
           <option value="8" selected>8</option>
         </select>
       </label>
-      <label>Stop Bits:
+      <label title="Number of stop bits per frame">Stop Bits:
         <select id="stopBits">
           <option value="1" selected>1</option>
           <option value="2">2</option>
         </select>
       </label>
-      <label>Parity:
+      <label title="Error-checking parity bit mode">Parity:
         <select id="parity">
           <option value="none" selected>None</option>
           <option value="even">Even</option>
           <option value="odd">Odd</option>
         </select>
       </label>
-      <label>Flow:
+      <label title="Hardware flow control (RTS/CTS)">Flow:
         <select id="flowControl">
           <option value="none" selected>None</option>
           <option value="hardware">Hardware</option>
         </select>
       </label>
-      <button id="connectBtn" class="connect" onclick="toggleConnection()">
+      <button id="connectBtn" class="connect" onclick="toggleConnection()" title="Open a serial port connection">
         &#9654; Connect
       </button>
-      <button onclick="clearTerminal()">Clear</button>
+      <button onclick="clearTerminal()" title="Clear the terminal output">Clear</button>
+      <button onclick="toggleHelp()" title="How to use this application" style="padding:6px 10px;font-size:0.8rem;">?</button>
     </div>
   </header>
 
@@ -680,33 +771,35 @@
   </div>
 
   <div class="remote-bar" id="remoteBar">
-    <button id="shareBtn" onclick="startSharing()">&#128279; Share Session</button>
+    <span class="section-label">HOST</span>
+    <button id="shareBtn" onclick="startSharing()" title="Start sharing your serial console session with remote peers via WebRTC">&#128279; Share</button>
     <span id="roomIdContainer" style="display:none;">
-      Room: <span class="room-id-display" id="roomIdDisplay" title="Click to copy" onclick="copyRoomId()"></span>
-      <button onclick="copyRoomId()" style="padding:3px 8px;font-size:0.7rem;">Copy</button>
-      <button onclick="generateInviteLink()" style="padding:3px 8px;font-size:0.7rem;">Invite Link</button>
-      <button onclick="stopSharing()" class="disconnect" style="padding:3px 8px;font-size:0.7rem;">Stop</button>
+      Room: <span class="room-id-display" id="roomIdDisplay" title="Click to copy room ID" onclick="copyRoomId()"></span>
+      <button onclick="copyRoomId()" style="padding:3px 8px;font-size:0.7rem;" title="Copy room ID to clipboard">Copy</button>
+      <button onclick="generateInviteLink()" style="padding:3px 8px;font-size:0.7rem;" title="Generate a one-time invite link that auto-joins and bypasses approval">Invite Link</button>
+      <button onclick="stopSharing()" class="disconnect" style="padding:3px 8px;font-size:0.7rem;" title="Stop sharing and disconnect all peers">Stop</button>
     </span>
-    <label class="checkbox-label" id="allowInputLabel" style="display:none;">
-      <input type="checkbox" id="allowRemoteInput" onchange="updatePeerPermissions()"> Allow Remote Input
+    <label class="checkbox-label" id="allowInputLabel" style="display:none;" title="When enabled, all connected peers can send commands to the serial port">
+      <input type="checkbox" id="allowRemoteInput" onchange="updatePeerPermissions()"> Allow Input
     </label>
     <span style="position:relative;display:inline-flex;align-items:center;">
-      <span id="peerCount" style="display:none;" class="peer-badge clickable" onclick="togglePeerList()">0 peers</span>
+      <span id="peerCount" style="display:none;" class="peer-badge clickable" onclick="togglePeerList()" title="Click to view connected peers, toggle permissions, or kick">0 peers</span>
       <div id="peerListPanel" class="peer-list-panel">
         <div class="peer-list-header">
           <span>Connected Peers</span>
-          <span id="peerListClose" style="cursor:pointer;color:#8892b0;" onclick="togglePeerList()">&times;</span>
+          <span id="peerListClose" style="cursor:pointer;color:#8892b0;" onclick="togglePeerList()" title="Close peer list">&times;</span>
         </div>
         <div id="peerListBody"></div>
       </div>
     </span>
     <span class="separator">|</span>
-    <input type="text" id="peerNameInput" placeholder="Your Name" maxlength="20" style="width:110px;background:var(--terminal-bg);color:#e0e0e0;border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:0.8rem;outline:none;">
-    <input type="text" id="joinRoomInput" placeholder="Room ID" maxlength="6" style="text-transform:uppercase;">
-    <button id="joinBtn" onclick="joinSession()">Join Session</button>
+    <span class="section-label">JOIN</span>
+    <input type="text" id="peerNameInput" placeholder="Your Name" maxlength="20" title="Set a friendly name visible to the host (optional)" style="width:110px;background:var(--terminal-bg);color:#e0e0e0;border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:0.8rem;outline:none;">
+    <input type="text" id="joinRoomInput" placeholder="Room ID" maxlength="6" title="Enter the 6-character room ID shared by the host" style="text-transform:uppercase;">
+    <button id="joinBtn" onclick="joinSession()" title="Connect to a shared session using the room ID">Join</button>
     <span id="peerStatus" style="display:none;" class="peer-badge remote-peer">Connected to host</span>
-    <span id="permissionStatus" style="display:none;" class="permission-badge view-only">View Only</span>
-    <button id="leaveBtn" style="display:none;padding:3px 8px;font-size:0.7rem;" class="disconnect" onclick="disconnectPeer()">Leave</button>
+    <span id="permissionStatus" style="display:none;" class="permission-badge view-only" title="Your current permission level set by the host">View Only</span>
+    <button id="leaveBtn" style="display:none;padding:3px 8px;font-size:0.7rem;" class="disconnect" onclick="disconnectPeer()" title="Disconnect from the host session">Leave</button>
   </div>
 
   <div id="pendingBar" class="pending-bar">
@@ -719,7 +812,7 @@
 
   <div class="input-bar">
     <input type="text" id="sendInput" placeholder="Type command and press Enter..." disabled>
-    <label class="line-ending-select">
+    <label class="line-ending-select" title="Line ending character(s) appended when sending commands">
       <select id="lineEnding">
         <option value="\r\n">CR+LF</option>
         <option value="\r">CR</option>
@@ -727,18 +820,63 @@
         <option value="">None</option>
       </select>
     </label>
-    <label class="checkbox-label">
-      <input type="checkbox" id="echoLocal"> Local Echo
+    <label class="checkbox-label" title="Show sent commands in the terminal output">
+      <input type="checkbox" id="echoLocal"> Echo
     </label>
-    <label class="checkbox-label">
+    <label class="checkbox-label" title="Automatically scroll to the bottom on new output">
       <input type="checkbox" id="autoScroll" checked> Auto-scroll
     </label>
-    <button id="sendBtn" disabled onclick="handleSend()">Send</button>
+    <button id="sendBtn" disabled onclick="handleSend()" title="Send the command to the serial port (or press Enter)">Send</button>
   </div>
 
   <footer>
-    Web Serial API &mdash; requires Chrome/Edge 89+ &middot; <a href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Serial_API" target="_blank">MDN Docs</a>
+    Web Serial API &mdash; requires Chrome/Edge 89+ &middot; <a href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Serial_API" target="_blank">MDN Docs</a> &middot; <a href="#" onclick="event.preventDefault();toggleHelp()">Help</a>
   </footer>
+
+  <div id="helpOverlay" class="help-overlay" onclick="if(event.target===this)toggleHelp()">
+    <div class="help-modal">
+      <h2>
+        Serial Console Help
+        <span class="close-help" onclick="toggleHelp()" title="Close">&times;</span>
+      </h2>
+
+      <h3>Getting Started</h3>
+      <p>This is a browser-based serial terminal. Click <strong>Connect</strong> to select a USB/serial device and start communicating. Requires Chrome or Edge 89+ with a secure context (HTTPS or localhost).</p>
+
+      <h3>Serial Settings</h3>
+      <p>Configure baud rate, data bits, stop bits, parity, and flow control in the toolbar to match your device. The most common configuration is <code>115200 8N1</code> (115200 baud, 8 data bits, no parity, 1 stop bit).</p>
+
+      <h3>Sending Commands</h3>
+      <p>Type in the input bar at the bottom and press <strong>Enter</strong> to send. You can also type directly in the terminal area when it has focus. Choose the line ending (CR, LF, CR+LF, or None) to match your device.</p>
+
+      <h3>Remote Sharing (P2P)</h3>
+      <p>Share your serial console with others over the internet using WebRTC peer-to-peer connections. No data passes through a server -- it goes directly between browsers.</p>
+      <ul>
+        <li><strong>Share</strong> -- Creates a room and generates a 6-character Room ID. Give this ID to anyone you want to connect.</li>
+        <li><strong>Invite Link</strong> -- Generates a one-time URL that auto-joins and bypasses the approval step. Each link works once.</li>
+        <li><strong>Join</strong> -- Enter a Room ID (and optionally your name) to connect to someone else's session.</li>
+      </ul>
+
+      <h3>Peer Management (Host)</h3>
+      <ul>
+        <li>Incoming connections require your approval unless they have a valid invite link or are reconnecting with a session token.</li>
+        <li>Click the <strong>peers badge</strong> to see connected peers, their IPs, connection duration, and permissions.</li>
+        <li>Toggle <strong>R/W</strong> or <strong>View</strong> per peer to control who can send commands.</li>
+        <li>Click <strong>X</strong> to kick a peer and revoke their session token.</li>
+      </ul>
+
+      <h3>Session Persistence</h3>
+      <p>Sessions survive page refreshes. The host's approved session tokens and the peer's credentials are stored in <code>sessionStorage</code> (tab-scoped, 30-minute expiry). Reconnecting peers with valid tokens are auto-approved.</p>
+
+      <h3>Security</h3>
+      <ul>
+        <li>All data is encrypted end-to-end via WebRTC DTLS.</li>
+        <li>Session tokens are negotiated via a two-party key exchange (SHA-256 of combined random halves).</li>
+        <li>Invite tokens are one-time use and stripped from the URL bar immediately.</li>
+        <li>Kicked peers have their session tokens revoked.</li>
+      </ul>
+    </div>
+  </div>
 
   <script>
     let port = null;
@@ -773,6 +911,22 @@
       terminal.innerHTML = '';
       appendToTerminal('[Terminal cleared]\n', 'system-msg');
     }
+
+    function toggleHelp() {
+      const overlay = document.getElementById('helpOverlay');
+      overlay.classList.toggle('visible');
+    }
+
+    // Close help on Escape
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const overlay = document.getElementById('helpOverlay');
+        if (overlay.classList.contains('visible')) {
+          overlay.classList.remove('visible');
+          e.preventDefault();
+        }
+      }
+    });
 
     function updateStatus(connected, info) {
       isConnected = connected;
@@ -943,8 +1097,15 @@
     // WebRTC P2P Remote Sharing (PeerJS)
     // =============================================
 
+    // HTML-escape to prevent XSS in innerHTML contexts (peer names, etc.)
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
     const PEER_CONFIG = {
-      debug: 2,
+      debug: 1,
       config: {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
@@ -1015,7 +1176,7 @@
 
     function saveSession() {
       try {
-        sessionStorage.setItem('sc_session', JSON.stringify({
+        const data = {
           role: isHost ? 'host' : (isPeer ? 'peer' : null),
           roomId: currentRoomId,
           terminalHistory: terminalHistory.slice(-50000), // cap at 50KB for storage
@@ -1023,7 +1184,16 @@
           peerName: peerName || '',
           sessionToken: peerSessionKey || '',
           timestamp: Date.now()
-        }));
+        };
+        // Host: persist approved session tokens so peers can reconnect after host refresh
+        if (isHost && approvedSessionKeys.size > 0) {
+          data.approvedSessionKeys = Array.from(approvedSessionKeys.entries());
+        }
+        // Host: persist unused invite tokens
+        if (isHost && inviteTokens.size > 0) {
+          data.inviteTokens = Array.from(inviteTokens.entries()).filter(([, v]) => !v.used);
+        }
+        sessionStorage.setItem('sc_session', JSON.stringify(data));
       } catch {}
     }
 
@@ -1262,14 +1432,14 @@
         const permClass = peerCanWrite ? 'rw' : 'ro';
         const permLabel = peerCanWrite ? 'R/W' : 'View';
         const nameHtml = displayName
-          ? `<span style="color:var(--accent);font-weight:600;font-size:0.8rem;">${displayName}</span>`
+          ? `<span style="color:var(--accent);font-weight:600;font-size:0.8rem;">${escapeHtml(displayName)}</span>`
           : '';
         return `<div class="peer-list-item">
           ${nameHtml}
-          <span class="peer-ip">${ip}</span>
-          <span class="peer-perm ${permClass}" style="cursor:pointer;" onclick="togglePeerWrite(${idx})" title="Click to toggle">${permLabel}</span>
+          <span class="peer-ip">${escapeHtml(ip)}</span>
+          <span class="peer-perm ${permClass}" style="cursor:pointer;" onclick="togglePeerWrite(${idx})" title="Click to toggle between Read/Write and View Only">${permLabel}</span>
           <span class="peer-duration">${duration}</span>
-          <span style="cursor:pointer;color:var(--danger);font-size:0.7rem;padding:1px 6px;border:1px solid var(--danger);border-radius:8px;opacity:0.7;transition:opacity 0.15s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7" onclick="kickPeer(${idx})" title="Kick peer">✕</span>
+          <span style="cursor:pointer;color:var(--danger);font-size:0.7rem;padding:1px 6px;border:1px solid var(--danger);border-radius:8px;opacity:0.7;transition:opacity 0.15s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7" onclick="kickPeer(${idx})" title="Kick this peer and revoke their session token">✕</span>
         </div>`;
       }).join('');
     }
@@ -1557,12 +1727,12 @@
       list.innerHTML = pendingConnections.map((p, idx) => {
         const name = p.name || '';
         const ip = p.ip || 'Resolving...';
-        const nameHtml = name ? `<span class="pending-name">${name}</span>` : '';
+        const nameHtml = name ? `<span class="pending-name">${escapeHtml(name)}</span>` : '';
         return `<div class="pending-request">
           <span style="color:#ffd700;">&#9888;</span>
           <span class="pending-info">
             ${nameHtml}
-            <span class="pending-ip">${ip}</span>
+            <span class="pending-ip">${escapeHtml(ip)}</span>
             <span style="color:#8892b0;font-size:0.65rem;">wants to join</span>
           </span>
           <button class="accept-btn" onclick="acceptPeer(${idx})">Accept</button>
@@ -2068,6 +2238,15 @@
         // Restore allow-input state
         if (session.allowInput) {
           document.getElementById('allowRemoteInput').checked = true;
+        }
+        // Restore approved session tokens so returning peers auto-approve after host refresh
+        if (session.approvedSessionKeys && Array.isArray(session.approvedSessionKeys)) {
+          approvedSessionKeys = new Map(session.approvedSessionKeys);
+          appendToTerminal(`[Session] Restored ${approvedSessionKeys.size} approved session token(s).\n`, 'system-msg');
+        }
+        // Restore unused invite tokens
+        if (session.inviteTokens && Array.isArray(session.inviteTokens)) {
+          inviteTokens = new Map(session.inviteTokens);
         }
         reconnectHost(session.roomId);
       } else if (session.role === 'peer') {
