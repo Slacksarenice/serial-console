@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Serial Console</title>
+  <style>
+    :root {
+      --bg: #1a1a2e;
+      --terminal-bg: #0d0d1a;
+      --text: #00ff88;
+      --text-dim: #00cc6a;
+      --accent: #00b4d8;
+      --border: #2a2a4a;
+      --toolbar-bg: #16213e;
+      --button-bg: #0f3460;
+      --button-hover: #1a4a7a;
+      --danger: #e74c3c;
+      --danger-hover: #c0392b;
+      --scrollbar: #2a2a4a;
+      --scrollbar-thumb: #00ff8844;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: #e0e0e0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    header {
+      background: var(--toolbar-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+
+    header h1 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--accent);
+      letter-spacing: 0.5px;
+    }
+
+    header h1 span {
+      color: var(--text);
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .toolbar label {
+      font-size: 0.75rem;
+      color: #8892b0;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .toolbar select, .toolbar input[type="number"] {
+      background: var(--terminal-bg);
+      color: #e0e0e0;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 0.8rem;
+      outline: none;
+    }
+
+    .toolbar select:focus, .toolbar input[type="number"]:focus {
+      border-color: var(--accent);
+    }
+
+    .toolbar input[type="number"] {
+      width: 80px;
+    }
+
+    button {
+      background: var(--button-bg);
+      color: #e0e0e0;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 6px 14px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    button:hover {
+      background: var(--button-hover);
+      border-color: var(--accent);
+    }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    button.connect {
+      background: #0a3d2a;
+      border-color: #00ff8844;
+      color: var(--text);
+    }
+
+    button.connect:hover:not(:disabled) {
+      background: #0d5a3a;
+    }
+
+    button.disconnect {
+      background: #3d0a0a;
+      border-color: #e74c3c44;
+      color: var(--danger);
+    }
+
+    button.disconnect:hover:not(:disabled) {
+      background: #5a1a1a;
+    }
+
+    .status-bar {
+      background: var(--toolbar-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 4px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 0.75rem;
+      color: #8892b0;
+      flex-shrink: 0;
+    }
+
+    .status-indicator {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--danger);
+      margin-right: 4px;
+    }
+
+    .status-indicator.connected {
+      background: var(--text);
+      box-shadow: 0 0 6px var(--text);
+    }
+
+    #terminal-container {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+    }
+
+    #terminal {
+      width: 100%;
+      height: 100%;
+      overflow-y: auto;
+      padding: 12px 16px;
+      font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--text);
+      background: var(--terminal-bg);
+      white-space: pre-wrap;
+      word-break: break-all;
+      cursor: text;
+    }
+
+    #terminal::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    #terminal::-webkit-scrollbar-track {
+      background: var(--terminal-bg);
+    }
+
+    #terminal::-webkit-scrollbar-thumb {
+      background: var(--scrollbar-thumb);
+      border-radius: 4px;
+    }
+
+    #terminal .system-msg {
+      color: var(--accent);
+    }
+
+    #terminal .error-msg {
+      color: var(--danger);
+    }
+
+    #terminal .sent-msg {
+      color: #ffd700;
+    }
+
+    .input-bar {
+      display: flex;
+      align-items: center;
+      background: var(--toolbar-bg);
+      border-top: 1px solid var(--border);
+      padding: 8px 16px;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .input-bar input[type="text"] {
+      flex: 1;
+      background: var(--terminal-bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px 12px;
+      font-family: 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 0.9rem;
+      outline: none;
+    }
+
+    .input-bar input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+
+    .input-bar input[type="text"]::placeholder {
+      color: #4a4a6a;
+    }
+
+    .line-ending-select {
+      font-size: 0.75rem;
+    }
+
+    .checkbox-label {
+      font-size: 0.75rem;
+      color: #8892b0;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .checkbox-label input {
+      accent-color: var(--accent);
+    }
+
+    footer {
+      background: var(--toolbar-bg);
+      border-top: 1px solid var(--border);
+      padding: 4px 20px;
+      font-size: 0.7rem;
+      color: #4a4a6a;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    footer a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    @media (max-width: 768px) {
+      header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .toolbar {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1><span>&gt;_</span> Serial Console</h1>
+    <div class="toolbar">
+      <label>Baud:
+        <select id="baudRate">
+          <option value="300">300</option>
+          <option value="1200">1200</option>
+          <option value="2400">2400</option>
+          <option value="4800">4800</option>
+          <option value="9600">9600</option>
+          <option value="19200">19200</option>
+          <option value="38400">38400</option>
+          <option value="57600">57600</option>
+          <option value="115200" selected>115200</option>
+          <option value="230400">230400</option>
+          <option value="460800">460800</option>
+          <option value="921600">921600</option>
+        </select>
+      </label>
+      <label>Data Bits:
+        <select id="dataBits">
+          <option value="7">7</option>
+          <option value="8" selected>8</option>
+        </select>
+      </label>
+      <label>Stop Bits:
+        <select id="stopBits">
+          <option value="1" selected>1</option>
+          <option value="2">2</option>
+        </select>
+      </label>
+      <label>Parity:
+        <select id="parity">
+          <option value="none" selected>None</option>
+          <option value="even">Even</option>
+          <option value="odd">Odd</option>
+        </select>
+      </label>
+      <label>Flow:
+        <select id="flowControl">
+          <option value="none" selected>None</option>
+          <option value="hardware">Hardware</option>
+        </select>
+      </label>
+      <button id="connectBtn" class="connect" onclick="toggleConnection()">
+        &#9654; Connect
+      </button>
+      <button onclick="clearTerminal()">Clear</button>
+    </div>
+  </header>
+
+  <div class="status-bar">
+    <span><span class="status-indicator" id="statusDot"></span> <span id="statusText">Disconnected</span></span>
+    <span id="portInfo">No port selected</span>
+    <span>RX: <span id="rxCount">0</span> bytes</span>
+    <span>TX: <span id="txCount">0</span> bytes</span>
+  </div>
+
+  <div id="terminal-container">
+    <div id="terminal" tabindex="0"></div>
+  </div>
+
+  <div class="input-bar">
+    <input type="text" id="sendInput" placeholder="Type command and press Enter..." disabled>
+    <label class="line-ending-select">
+      <select id="lineEnding">
+        <option value="\r\n">CR+LF</option>
+        <option value="\r">CR</option>
+        <option value="\n" selected>LF</option>
+        <option value="">None</option>
+      </select>
+    </label>
+    <label class="checkbox-label">
+      <input type="checkbox" id="echoLocal"> Local Echo
+    </label>
+    <label class="checkbox-label">
+      <input type="checkbox" id="autoScroll" checked> Auto-scroll
+    </label>
+    <button id="sendBtn" disabled onclick="sendInput()">Send</button>
+  </div>
+
+  <footer>
+    Web Serial API &mdash; requires Chrome/Edge 89+ &middot; <a href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Serial_API" target="_blank">MDN Docs</a>
+  </footer>
+
+  <script>
+    let port = null;
+    let reader = null;
+    let writer = null;
+    let isConnected = false;
+    let rxBytes = 0;
+    let txBytes = 0;
+    let keepReading = false;
+
+    const terminal = document.getElementById('terminal');
+    const connectBtn = document.getElementById('connectBtn');
+    const sendInput = document.getElementById('sendInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const portInfo = document.getElementById('portInfo');
+    const rxCountEl = document.getElementById('rxCount');
+    const txCountEl = document.getElementById('txCount');
+
+    function appendToTerminal(text, className) {
+      const span = document.createElement('span');
+      if (className) span.className = className;
+      span.textContent = text;
+      terminal.appendChild(span);
+      if (document.getElementById('autoScroll').checked) {
+        terminal.scrollTop = terminal.scrollHeight;
+      }
+    }
+
+    function clearTerminal() {
+      terminal.innerHTML = '';
+      appendToTerminal('[Terminal cleared]\n', 'system-msg');
+    }
+
+    function updateStatus(connected, info) {
+      isConnected = connected;
+      statusDot.className = 'status-indicator' + (connected ? ' connected' : '');
+      statusText.textContent = connected ? 'Connected' : 'Disconnected';
+      portInfo.textContent = info || 'No port selected';
+      connectBtn.innerHTML = connected ? '&#9632; Disconnect' : '&#9654; Connect';
+      connectBtn.className = connected ? 'disconnect' : 'connect';
+      sendInput.disabled = !connected;
+      sendBtn.disabled = !connected;
+      if (connected) sendInput.focus();
+    }
+
+    async function toggleConnection() {
+      if (isConnected) {
+        await disconnect();
+      } else {
+        await connect();
+      }
+    }
+
+    async function connect() {
+      if (!('serial' in navigator)) {
+        appendToTerminal('[Error] Web Serial API not supported. Use Chrome or Edge 89+.\n', 'error-msg');
+        return;
+      }
+
+      try {
+        port = await navigator.serial.requestPort();
+        const baudRate = parseInt(document.getElementById('baudRate').value);
+        const dataBits = parseInt(document.getElementById('dataBits').value);
+        const stopBits = parseInt(document.getElementById('stopBits').value);
+        const parity = document.getElementById('parity').value;
+        const flowControl = document.getElementById('flowControl').value;
+
+        await port.open({ baudRate, dataBits, stopBits, parity, flowControl });
+
+        const info = port.getInfo();
+        const vendorId = info.usbVendorId ? `VID:0x${info.usbVendorId.toString(16).toUpperCase()}` : '';
+        const productId = info.usbProductId ? `PID:0x${info.usbProductId.toString(16).toUpperCase()}` : '';
+        const portDesc = [vendorId, productId].filter(Boolean).join(' ') || 'Serial Port';
+
+        updateStatus(true, `${portDesc} @ ${baudRate} baud`);
+        appendToTerminal(`[Connected] ${portDesc} | ${baudRate} ${dataBits}${parity[0].toUpperCase()}${stopBits} | Flow: ${flowControl}\n`, 'system-msg');
+
+        keepReading = true;
+        readLoop();
+
+      } catch (err) {
+        if (err.name === 'NotFoundError') {
+          appendToTerminal('[Info] No port selected.\n', 'system-msg');
+        } else {
+          appendToTerminal(`[Error] ${err.message}\n`, 'error-msg');
+        }
+      }
+    }
+
+    async function readLoop() {
+      const decoder = new TextDecoderStream();
+      const readableStreamClosed = port.readable.pipeTo(decoder.writable);
+      reader = decoder.readable.getReader();
+
+      try {
+        while (keepReading) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) {
+            rxBytes += new Blob([value]).size;
+            rxCountEl.textContent = rxBytes;
+            appendToTerminal(value);
+          }
+        }
+      } catch (err) {
+        if (keepReading) {
+          appendToTerminal(`\n[Error] Read failed: ${err.message}\n`, 'error-msg');
+        }
+      } finally {
+        reader.releaseLock();
+        try { await readableStreamClosed; } catch {}
+      }
+    }
+
+    async function disconnect() {
+      keepReading = false;
+      try {
+        if (reader) {
+          await reader.cancel();
+          reader = null;
+        }
+        if (port) {
+          await port.close();
+          port = null;
+        }
+      } catch (err) {
+        appendToTerminal(`[Error] Disconnect: ${err.message}\n`, 'error-msg');
+      }
+      updateStatus(false);
+      appendToTerminal('[Disconnected]\n', 'system-msg');
+    }
+
+    async function sendData(text) {
+      if (!port || !port.writable) return;
+      const encoder = new TextEncoder();
+      const writer = port.writable.getWriter();
+      try {
+        const data = encoder.encode(text);
+        await writer.write(data);
+        txBytes += data.length;
+        txCountEl.textContent = txBytes;
+        if (document.getElementById('echoLocal').checked) {
+          appendToTerminal(text, 'sent-msg');
+        }
+      } finally {
+        writer.releaseLock();
+      }
+    }
+
+    function sendInput() {
+      const input = document.getElementById('sendInput');
+      const text = input.value;
+      if (!text && !document.getElementById('lineEnding').value) return;
+
+      const lineEnding = document.getElementById('lineEnding').value
+        .replace('\\r', '\r')
+        .replace('\\n', '\n');
+
+      sendData(text + lineEnding);
+      input.value = '';
+      input.focus();
+    }
+
+    // Keyboard handling
+    document.getElementById('sendInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        sendInput();
+      }
+    });
+
+    // Direct keyboard input to terminal when focused
+    terminal.addEventListener('keydown', (e) => {
+      if (!isConnected) return;
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      if (e.key.length === 1) {
+        sendData(e.key);
+        e.preventDefault();
+      } else if (e.key === 'Enter') {
+        const lineEnding = document.getElementById('lineEnding').value
+          .replace('\\r', '\r')
+          .replace('\\n', '\n');
+        sendData(lineEnding);
+        e.preventDefault();
+      } else if (e.key === 'Backspace') {
+        sendData('\b');
+        e.preventDefault();
+      }
+    });
+
+    // Handle port disconnect events
+    navigator.serial?.addEventListener('disconnect', (e) => {
+      if (port && e.target === port) {
+        keepReading = false;
+        updateStatus(false);
+        appendToTerminal('\n[Port disconnected]\n', 'error-msg');
+      }
+    });
+
+    // Initial message
+    appendToTerminal('Serial Console — Web Serial API Terminal\n', 'system-msg');
+    appendToTerminal('Click "Connect" to select a serial port.\n\n', 'system-msg');
+
+    if (!('serial' in navigator)) {
+      appendToTerminal('[Warning] Web Serial API is not available in this browser.\n', 'error-msg');
+      appendToTerminal('Please use Chrome or Edge version 89 or later.\n', 'error-msg');
+      connectBtn.disabled = true;
+    }
+  </script>
+
+</body>
+</html>
