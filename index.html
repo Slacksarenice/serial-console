@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Serial Console</title>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <style>
     :root {
       --bg: #1a1a2e;
@@ -270,6 +271,98 @@
       text-decoration: none;
     }
 
+    .remote-bar {
+      background: var(--toolbar-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 6px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 0.8rem;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    .remote-bar input[type="text"] {
+      background: var(--terminal-bg);
+      color: var(--accent);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-family: 'Cascadia Code', monospace;
+      font-size: 0.85rem;
+      width: 100px;
+      outline: none;
+      letter-spacing: 2px;
+      text-align: center;
+    }
+
+    .remote-bar input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+
+    .room-id-display {
+      background: var(--terminal-bg);
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      padding: 4px 10px;
+      font-family: 'Cascadia Code', monospace;
+      font-size: 0.95rem;
+      letter-spacing: 3px;
+      user-select: all;
+      cursor: pointer;
+    }
+
+    .remote-bar .separator {
+      color: var(--border);
+      font-size: 1.2rem;
+    }
+
+    .peer-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #0a3d2a;
+      border: 1px solid #00ff8844;
+      border-radius: 12px;
+      padding: 2px 10px;
+      font-size: 0.7rem;
+      color: var(--text);
+    }
+
+    .peer-badge.remote-peer {
+      background: #1a1a4a;
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .permission-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 12px;
+      border: 1px solid;
+    }
+
+    .permission-badge.read-write {
+      background: #0a3d2a;
+      border-color: #00ff8844;
+      color: var(--text);
+    }
+
+    .permission-badge.view-only {
+      background: #3d2a0a;
+      border-color: #ffd70044;
+      color: #ffd700;
+    }
+
+    #terminal .remote-msg {
+      color: #bb86fc;
+    }
+
     @media (max-width: 768px) {
       header {
         flex-direction: column;
@@ -342,6 +435,24 @@
     <span>TX: <span id="txCount">0</span> bytes</span>
   </div>
 
+  <div class="remote-bar" id="remoteBar">
+    <button id="shareBtn" onclick="startSharing()">&#128279; Share Session</button>
+    <span id="roomIdContainer" style="display:none;">
+      Room: <span class="room-id-display" id="roomIdDisplay" title="Click to copy" onclick="copyRoomId()"></span>
+      <button onclick="copyRoomId()" style="padding:3px 8px;font-size:0.7rem;">Copy</button>
+      <button onclick="stopSharing()" class="disconnect" style="padding:3px 8px;font-size:0.7rem;">Stop</button>
+    </span>
+    <label class="checkbox-label" id="allowInputLabel" style="display:none;">
+      <input type="checkbox" id="allowRemoteInput" onchange="updatePeerPermissions()"> Allow Remote Input
+    </label>
+    <span id="peerCount" style="display:none;" class="peer-badge">0 peers</span>
+    <span class="separator">|</span>
+    <input type="text" id="joinRoomInput" placeholder="Room ID" maxlength="6" style="text-transform:uppercase;">
+    <button id="joinBtn" onclick="joinSession()">Join Session</button>
+    <span id="peerStatus" style="display:none;" class="peer-badge remote-peer">Connected to host</span>
+    <span id="permissionStatus" style="display:none;" class="permission-badge view-only">View Only</span>
+  </div>
+
   <div id="terminal-container">
     <div id="terminal" tabindex="0"></div>
   </div>
@@ -410,7 +521,7 @@
       portInfo.textContent = info || 'No port selected';
       connectBtn.innerHTML = connected ? '&#9632; Disconnect' : '&#9654; Connect';
       connectBtn.className = connected ? 'disconnect' : 'connect';
-      sendInput.disabled = !connected;
+      sendInputEl.disabled = !connected;
       sendBtn.disabled = !connected;
       if (connected) sendInputEl.focus();
     }
@@ -568,13 +679,282 @@
       }
     });
 
+    // =============================================
+    // WebRTC P2P Remote Sharing (PeerJS)
+    // =============================================
+
+    let peer = null;               // PeerJS instance
+    let hostConnections = [];      // Host: array of DataConnections to peers
+    let peerConnection = null;     // Peer: DataConnection to host
+    let isHost = false;
+    let isPeer = false;
+    let terminalHistory = '';      // Buffer of all terminal output for new peers
+    let canWrite = false;          // Peer: whether host allows input
+
+    // Override appendToTerminal to also capture history and broadcast
+    const _origAppend = appendToTerminal;
+    appendToTerminal = function(text, className) {
+      _origAppend(text, className);
+      // Capture to history buffer (cap at 100KB)
+      terminalHistory += text;
+      if (terminalHistory.length > 100000) {
+        terminalHistory = terminalHistory.slice(-80000);
+      }
+      // Host: broadcast to all connected peers
+      if (isHost && hostConnections.length > 0) {
+        const msg = JSON.stringify({ type: 'terminal', data: text, className: className || null });
+        hostConnections.forEach(conn => {
+          try { conn.send(msg); } catch {}
+        });
+      }
+    };
+
+    function generateRoomId() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let id = '';
+      for (let i = 0; i < 6; i++) id += chars[Math.floor(Math.random() * chars.length)];
+      return id;
+    }
+
+    function updatePeerCountUI() {
+      const countEl = document.getElementById('peerCount');
+      const n = hostConnections.length;
+      countEl.textContent = n + (n === 1 ? ' peer' : ' peers');
+      countEl.style.display = n > 0 ? 'inline-flex' : 'none';
+    }
+
+    // ---- HOST LOGIC ----
+
+    function startSharing() {
+      if (isHost || isPeer) return;
+      const roomId = generateRoomId();
+      const peerId = 'serial-console-' + roomId;
+
+      document.getElementById('shareBtn').disabled = true;
+      appendToTerminal(`[Remote] Starting share session...\n`, 'remote-msg');
+
+      peer = new Peer(peerId, { debug: 0 });
+
+      peer.on('open', (id) => {
+        isHost = true;
+        document.getElementById('roomIdDisplay').textContent = roomId;
+        document.getElementById('roomIdContainer').style.display = 'inline';
+        document.getElementById('allowInputLabel').style.display = 'inline-flex';
+        document.getElementById('joinRoomInput').disabled = true;
+        document.getElementById('joinBtn').disabled = true;
+        appendToTerminal(`[Remote] Session shared. Room ID: ${roomId}\n`, 'remote-msg');
+      });
+
+      peer.on('connection', (conn) => {
+        conn.on('open', () => {
+          hostConnections.push(conn);
+          updatePeerCountUI();
+          appendToTerminal(`[Remote] Peer connected (${hostConnections.length} total)\n`, 'remote-msg');
+
+          // Send terminal history
+          conn.send(JSON.stringify({ type: 'history', data: terminalHistory }));
+
+          // Send current serial status
+          conn.send(JSON.stringify({
+            type: 'status',
+            connected: isConnected,
+            info: portInfo.textContent
+          }));
+
+          // Send current permission
+          const allowInput = document.getElementById('allowRemoteInput').checked;
+          conn.send(JSON.stringify({ type: 'permission', canWrite: allowInput }));
+        });
+
+        conn.on('data', (raw) => {
+          try {
+            const msg = JSON.parse(raw);
+            if (msg.type === 'command' && document.getElementById('allowRemoteInput').checked) {
+              // Peer is sending a command — write to serial
+              if (isConnected && port && port.writable) {
+                sendData(msg.data);
+                appendToTerminal(`${msg.data}`, 'remote-msg');
+              }
+            }
+          } catch {}
+        });
+
+        conn.on('close', () => {
+          hostConnections = hostConnections.filter(c => c !== conn);
+          updatePeerCountUI();
+          appendToTerminal(`[Remote] Peer disconnected (${hostConnections.length} remaining)\n`, 'remote-msg');
+        });
+
+        conn.on('error', () => {
+          hostConnections = hostConnections.filter(c => c !== conn);
+          updatePeerCountUI();
+        });
+      });
+
+      peer.on('error', (err) => {
+        appendToTerminal(`[Remote Error] ${err.message}\n`, 'error-msg');
+        document.getElementById('shareBtn').disabled = false;
+      });
+    }
+
+    function stopSharing() {
+      if (!isHost) return;
+      hostConnections.forEach(conn => {
+        try { conn.close(); } catch {}
+      });
+      hostConnections = [];
+      if (peer) { peer.destroy(); peer = null; }
+      isHost = false;
+
+      document.getElementById('shareBtn').disabled = false;
+      document.getElementById('roomIdContainer').style.display = 'none';
+      document.getElementById('allowInputLabel').style.display = 'none';
+      document.getElementById('peerCount').style.display = 'none';
+      document.getElementById('joinRoomInput').disabled = false;
+      document.getElementById('joinBtn').disabled = false;
+      appendToTerminal('[Remote] Session sharing stopped.\n', 'remote-msg');
+    }
+
+    function copyRoomId() {
+      const roomId = document.getElementById('roomIdDisplay').textContent;
+      navigator.clipboard.writeText(roomId).then(() => {
+        appendToTerminal(`[Remote] Room ID "${roomId}" copied to clipboard.\n`, 'remote-msg');
+      });
+    }
+
+    function updatePeerPermissions() {
+      const allowInput = document.getElementById('allowRemoteInput').checked;
+      const msg = JSON.stringify({ type: 'permission', canWrite: allowInput });
+      hostConnections.forEach(conn => {
+        try { conn.send(msg); } catch {}
+      });
+      appendToTerminal(`[Remote] Remote input ${allowInput ? 'enabled' : 'disabled'}.\n`, 'remote-msg');
+    }
+
+    // ---- PEER LOGIC ----
+
+    function joinSession() {
+      if (isHost || isPeer) return;
+      const roomId = document.getElementById('joinRoomInput').value.trim().toUpperCase();
+      if (!roomId || roomId.length !== 6) {
+        appendToTerminal('[Remote] Please enter a valid 6-character Room ID.\n', 'error-msg');
+        return;
+      }
+
+      const peerId = 'serial-console-' + roomId;
+      document.getElementById('joinBtn').disabled = true;
+      appendToTerminal(`[Remote] Connecting to room ${roomId}...\n`, 'remote-msg');
+
+      peer = new Peer({ debug: 0 });
+
+      peer.on('open', () => {
+        peerConnection = peer.connect(peerId, { reliable: true });
+
+        peerConnection.on('open', () => {
+          isPeer = true;
+          document.getElementById('peerStatus').style.display = 'inline-flex';
+          document.getElementById('permissionStatus').style.display = 'inline-flex';
+          document.getElementById('shareBtn').disabled = true;
+          document.getElementById('joinRoomInput').disabled = true;
+
+          // Hide host-only controls
+          document.getElementById('connectBtn').style.display = 'none';
+          document.querySelectorAll('.toolbar label').forEach(l => l.style.display = 'none');
+          document.querySelector('.toolbar button:last-child').style.display = 'none'; // Clear btn
+
+          appendToTerminal(`[Remote] Connected to host session ${roomId}!\n`, 'remote-msg');
+        });
+
+        peerConnection.on('data', (raw) => {
+          try {
+            const msg = JSON.parse(raw);
+            switch (msg.type) {
+              case 'terminal':
+                _origAppend(msg.data, msg.className);
+                break;
+              case 'history':
+                terminal.innerHTML = '';
+                _origAppend(msg.data);
+                break;
+              case 'status':
+                if (msg.connected) {
+                  updateStatus(true, msg.info);
+                }
+                break;
+              case 'permission':
+                canWrite = msg.canWrite;
+                sendInputEl.disabled = !canWrite;
+                sendBtn.disabled = !canWrite;
+                const badge = document.getElementById('permissionStatus');
+                badge.textContent = canWrite ? 'Read/Write' : 'View Only';
+                badge.className = 'permission-badge ' + (canWrite ? 'read-write' : 'view-only');
+                sendInputEl.placeholder = canWrite ? 'Type command and press Enter...' : 'View only — host has not enabled remote input';
+                break;
+            }
+          } catch {}
+        });
+
+        peerConnection.on('close', () => {
+          isPeer = false;
+          canWrite = false;
+          peerConnection = null;
+          document.getElementById('peerStatus').style.display = 'none';
+          document.getElementById('permissionStatus').style.display = 'none';
+          document.getElementById('shareBtn').disabled = false;
+          document.getElementById('joinBtn').disabled = false;
+          document.getElementById('joinRoomInput').disabled = false;
+          document.getElementById('connectBtn').style.display = '';
+          document.querySelectorAll('.toolbar label').forEach(l => l.style.display = '');
+          document.querySelector('.toolbar button:last-child').style.display = '';
+          sendInputEl.disabled = true;
+          sendBtn.disabled = true;
+          appendToTerminal('[Remote] Disconnected from host.\n', 'remote-msg');
+        });
+
+        peerConnection.on('error', (err) => {
+          appendToTerminal(`[Remote Error] ${err.message}\n`, 'error-msg');
+        });
+      });
+
+      peer.on('error', (err) => {
+        appendToTerminal(`[Remote Error] ${err.message}\n`, 'error-msg');
+        document.getElementById('joinBtn').disabled = false;
+      });
+    }
+
+    // Override sendData for peer mode — send via WebRTC instead of serial
+    const _origSendData = sendData;
+    sendData = async function(text) {
+      if (isPeer && peerConnection && canWrite) {
+        // Send command to host via WebRTC
+        peerConnection.send(JSON.stringify({ type: 'command', data: text }));
+        if (document.getElementById('echoLocal').checked) {
+          _origAppend(text, 'sent-msg');
+        }
+        return;
+      }
+      // Normal serial send
+      return _origSendData(text);
+    };
+
+    // Handle room ID input — auto-uppercase and join on Enter
+    document.getElementById('joinRoomInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        joinSession();
+      }
+    });
+    document.getElementById('joinRoomInput').addEventListener('input', (e) => {
+      e.target.value = e.target.value.toUpperCase();
+    });
+
     // Initial message
     appendToTerminal('Serial Console — Web Serial API Terminal\n', 'system-msg');
-    appendToTerminal('Click "Connect" to select a serial port.\n\n', 'system-msg');
+    appendToTerminal('Click "Connect" to select a serial port, or use Remote to share/join.\n\n', 'system-msg');
 
     if (!('serial' in navigator)) {
       appendToTerminal('[Warning] Web Serial API is not available in this browser.\n', 'error-msg');
-      appendToTerminal('Please use Chrome or Edge version 89 or later.\n', 'error-msg');
+      appendToTerminal('You can still join a remote session using a Room ID.\n', 'system-msg');
       connectBtn.disabled = true;
     }
   </script>
