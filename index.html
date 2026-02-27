@@ -363,92 +363,6 @@
       color: #bb86fc;
     }
 
-    .settings-overlay {
-      display: none;
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.6);
-      z-index: 100;
-      justify-content: center;
-      align-items: center;
-    }
-
-    .settings-overlay.open {
-      display: flex;
-    }
-
-    .settings-panel {
-      background: var(--toolbar-bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 24px;
-      width: 460px;
-      max-width: 90vw;
-    }
-
-    .settings-panel h2 {
-      color: var(--accent);
-      font-size: 1rem;
-      margin-bottom: 16px;
-    }
-
-    .settings-panel label {
-      display: block;
-      font-size: 0.75rem;
-      color: #8892b0;
-      margin-bottom: 4px;
-    }
-
-    .settings-panel input[type="text"],
-    .settings-panel input[type="password"] {
-      width: 100%;
-      background: var(--terminal-bg);
-      color: #e0e0e0;
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 6px 10px;
-      font-family: 'Cascadia Code', monospace;
-      font-size: 0.8rem;
-      outline: none;
-      margin-bottom: 12px;
-    }
-
-    .settings-panel input:focus {
-      border-color: var(--accent);
-    }
-
-    .settings-panel .hint {
-      font-size: 0.65rem;
-      color: #4a4a6a;
-      margin-top: -8px;
-      margin-bottom: 12px;
-    }
-
-    .settings-panel .btn-row {
-      display: flex;
-      gap: 8px;
-      justify-content: flex-end;
-      margin-top: 16px;
-    }
-
-    .turn-status {
-      font-size: 0.7rem;
-      padding: 2px 8px;
-      border-radius: 12px;
-      border: 1px solid;
-    }
-
-    .turn-status.configured {
-      background: #0a3d2a;
-      border-color: #00ff8844;
-      color: var(--text);
-    }
-
-    .turn-status.not-configured {
-      background: #3d2a0a;
-      border-color: #ffd70044;
-      color: #ffd700;
-    }
 
     @media (max-width: 768px) {
       header {
@@ -538,30 +452,6 @@
     <button id="joinBtn" onclick="joinSession()">Join Session</button>
     <span id="peerStatus" style="display:none;" class="peer-badge remote-peer">Connected to host</span>
     <span id="permissionStatus" style="display:none;" class="permission-badge view-only">View Only</span>
-    <span style="flex:1;"></span>
-    <span id="turnStatus" class="turn-status not-configured">STUN only</span>
-    <button onclick="openSettings()" style="padding:3px 8px;font-size:0.7rem;">&#9881; TURN</button>
-  </div>
-
-  <div class="settings-overlay" id="settingsOverlay" onclick="if(event.target===this)closeSettings()">
-    <div class="settings-panel">
-      <h2>&#9881; Cloudflare TURN Server</h2>
-      <p style="font-size:0.75rem;color:#8892b0;margin-bottom:16px;">
-        TURN relay enables connections through firewalls and symmetric NATs.
-        Get free credentials at <a href="https://dash.cloudflare.com/?to=/:account/calls" target="_blank" style="color:var(--accent);">Cloudflare Calls Dashboard</a>.
-      </p>
-      <label for="turnKeyId">Turn Key ID (username)</label>
-      <input type="text" id="turnKeyId" placeholder="e.g. abc123def456...">
-      <label for="turnToken">API Token (credential)</label>
-      <input type="password" id="turnToken" placeholder="Your Cloudflare TURN token">
-      <div class="hint">Credentials are stored in your browser's localStorage — never sent anywhere except Cloudflare's TURN servers.</div>
-      <div class="btn-row">
-        <button onclick="clearTurnConfig()">Clear</button>
-        <button onclick="testTurnConfig()" style="background:#0a3d2a;border-color:#00ff8844;color:var(--text);">Test</button>
-        <button onclick="saveTurnConfig()" class="connect">Save</button>
-      </div>
-      <div id="turnTestResult" style="font-size:0.75rem;margin-top:8px;min-height:1.2em;"></div>
-    </div>
   </div>
 
   <div id="terminal-container">
@@ -791,157 +681,21 @@
     });
 
     // =============================================
-    // TURN Server Configuration (Cloudflare Calls)
-    // =============================================
-
-    function getTurnConfig() {
-      try {
-        const keyId = localStorage.getItem('turn_key_id');
-        const token = localStorage.getItem('turn_token');
-        if (keyId && token) return { keyId, token };
-      } catch {}
-      return null;
-    }
-
-    function getIceServers() {
-      const servers = [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
-      ];
-      const turn = getTurnConfig();
-      if (turn) {
-        servers.push(
-          { urls: 'turn:turn.cloudflare.com:3478?transport=udp', username: turn.keyId, credential: turn.token },
-          { urls: 'turn:turn.cloudflare.com:3478?transport=tcp', username: turn.keyId, credential: turn.token },
-          { urls: 'turns:turn.cloudflare.com:5349?transport=tcp', username: turn.keyId, credential: turn.token }
-        );
-      }
-      return servers;
-    }
-
-    function getPeerConfig() {
-      return {
-        debug: 2,
-        config: { iceServers: getIceServers() }
-      };
-    }
-
-    function openSettings() {
-      const turn = getTurnConfig();
-      if (turn) {
-        document.getElementById('turnKeyId').value = turn.keyId;
-        document.getElementById('turnToken').value = turn.token;
-      }
-      document.getElementById('settingsOverlay').classList.add('open');
-    }
-
-    function closeSettings() {
-      document.getElementById('settingsOverlay').classList.remove('open');
-    }
-
-    function saveTurnConfig() {
-      const keyId = document.getElementById('turnKeyId').value.trim();
-      const token = document.getElementById('turnToken').value.trim();
-      if (keyId && token) {
-        localStorage.setItem('turn_key_id', keyId);
-        localStorage.setItem('turn_token', token);
-        updateTurnStatusUI(true);
-        appendToTerminal('[TURN] Cloudflare TURN credentials saved.\n', 'system-msg');
-      } else {
-        appendToTerminal('[TURN] Both Key ID and Token are required.\n', 'error-msg');
-        return;
-      }
-      closeSettings();
-    }
-
-    function clearTurnConfig() {
-      localStorage.removeItem('turn_key_id');
-      localStorage.removeItem('turn_token');
-      document.getElementById('turnKeyId').value = '';
-      document.getElementById('turnToken').value = '';
-      document.getElementById('turnTestResult').textContent = '';
-      updateTurnStatusUI(false);
-      appendToTerminal('[TURN] Credentials cleared. Using STUN only.\n', 'system-msg');
-      closeSettings();
-    }
-
-    async function testTurnConfig() {
-      const keyId = document.getElementById('turnKeyId').value.trim();
-      const token = document.getElementById('turnToken').value.trim();
-      const resultEl = document.getElementById('turnTestResult');
-
-      if (!keyId || !token) {
-        resultEl.innerHTML = '<span style="color:var(--danger);">Enter both Key ID and Token first.</span>';
-        return;
-      }
-
-      resultEl.innerHTML = '<span style="color:var(--accent);">Testing TURN connectivity...</span>';
-
-      try {
-        const pc = new RTCPeerConnection({
-          iceServers: [
-            { urls: 'turn:turn.cloudflare.com:3478?transport=udp', username: keyId, credential: token },
-            { urls: 'turns:turn.cloudflare.com:5349?transport=tcp', username: keyId, credential: token }
-          ],
-          iceCandidatePoolSize: 0
-        });
-
-        let foundRelay = false;
-        let timeoutId;
-
-        const done = (success, detail) => {
-          clearTimeout(timeoutId);
-          pc.close();
-          if (success) {
-            resultEl.innerHTML = `<span style="color:var(--text);">TURN relay reachable! (${detail})</span>`;
-          } else {
-            resultEl.innerHTML = `<span style="color:var(--danger);">${detail}</span>`;
-          }
-        };
-
-        pc.onicecandidate = (e) => {
-          if (e.candidate && e.candidate.candidate.includes('relay')) {
-            foundRelay = true;
-            done(true, e.candidate.candidate.split(' ')[4]);
-          }
-        };
-
-        pc.onicegatheringstatechange = () => {
-          if (pc.iceGatheringState === 'complete' && !foundRelay) {
-            done(false, 'No relay candidates — check credentials.');
-          }
-        };
-
-        pc.createDataChannel('test');
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-
-        timeoutId = setTimeout(() => {
-          if (!foundRelay) done(false, 'Timed out — TURN server not reachable.');
-        }, 10000);
-
-      } catch (err) {
-        resultEl.innerHTML = `<span style="color:var(--danger);">Error: ${err.message}</span>`;
-      }
-    }
-
-    function updateTurnStatusUI(configured) {
-      const el = document.getElementById('turnStatus');
-      if (configured) {
-        el.textContent = 'TURN ready';
-        el.className = 'turn-status configured';
-      } else {
-        el.textContent = 'STUN only';
-        el.className = 'turn-status not-configured';
-      }
-    }
-
-    // Init TURN status on load
-    updateTurnStatusUI(!!getTurnConfig());
-
-    // =============================================
     // WebRTC P2P Remote Sharing (PeerJS)
     // =============================================
+
+    const PEER_CONFIG = {
+      debug: 2,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' },
+          { urls: 'stun:stun4.l.google.com:19302' }
+        ]
+      }
+    };
 
     let peer = null;               // PeerJS instance
     let hostConnections = [];      // Host: array of DataConnections to peers
@@ -993,7 +747,7 @@
       document.getElementById('shareBtn').disabled = true;
       appendToTerminal(`[Remote] Starting share session...\n`, 'remote-msg');
 
-      peer = new Peer(peerId, getPeerConfig());
+      peer = new Peer(peerId, PEER_CONFIG);
 
       peer.on('open', (id) => {
         isHost = true;
@@ -1109,7 +863,7 @@
       document.getElementById('joinBtn').disabled = true;
       appendToTerminal(`[Remote] Connecting to room ${roomId}...\n`, 'remote-msg');
 
-      peer = new Peer(getPeerConfig());
+      peer = new Peer(PEER_CONFIG);
 
       peer.on('open', () => {
         appendToTerminal(`[Remote] Signaling connected. Reaching out to host...\n`, 'remote-msg');
