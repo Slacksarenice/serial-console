@@ -555,6 +555,7 @@ let approvedSessionKeys = new Map();
 let pendingConnections = []; // [{peerId, name, pc, dc}]
 let canWrite = false;
 let terminalHistory = '';
+let peerReconnectTimeout = null;
 
 // File share state
 let fsMode = 'private';
@@ -690,6 +691,164 @@ function loadSettings() {
       $('turnRelayOnly').checked = turnConfig.relayOnly;
     }
   } catch {}
+}
+
+// =============================================
+// Session Persistence (survives page refresh via sessionStorage)
+// =============================================
+function saveSession() {
+  const session = { savedAt: Date.now() };
+  if (isHost) {
+    session.role = 'host';
+    session.mode = p2pMode;
+    if (p2pMode === 'quick') {
+      session.roomId = quickRoomId;
+      session.password = quickRoomPassword;
+    }
+    session.allowInput = $('allowRemoteInput').checked;
+    session.approvedKeys = [...approvedSessionKeys.entries()];
+  } else if (isPeer) {
+    session.role = 'peer';
+    session.mode = p2pMode;
+    if (p2pMode === 'quick') {
+      session.roomId = quickRoomId;
+      session.password = quickRoomPassword;
+    }
+    session.peerName = peerName;
+    session.sessionToken = peerSessionKey;
+  }
+  if (session.role) {
+    try { sessionStorage.setItem('sc-session', JSON.stringify(session)); } catch {}
+  }
+}
+
+function loadSession() {
+  try {
+    const raw = sessionStorage.getItem('sc-session');
+    if (!raw) return null;
+    const session = JSON.parse(raw);
+    if (Date.now() - session.savedAt > 30 * 60 * 1000) {
+      sessionStorage.removeItem('sc-session');
+      return null;
+    }
+    return session;
+  } catch { return null; }
+}
+
+function clearSession() {
+  sessionStorage.removeItem('sc-session');
+}
+
+async function restoreSession() {
+  const session = loadSession();
+  if (!session) return;
+
+  if (session.mode === 'quick' && session.role === 'host') {
+    await restoreQuickHost(session);
+  } else if (session.mode === 'quick' && session.role === 'peer') {
+    await restoreQuickPeer(session);
+  } else if (session.mode === 'private') {
+    // Private mode can't auto-reconnect (needs out-of-band SDP exchange)
+    // But we restore session tokens so returning peers get auto-approved
+    if (session.role === 'host' && session.approvedKeys) {
+      approvedSessionKeys = new Map(session.approvedKeys);
+      appendLine('[Session] Previous private session info restored. Approved session tokens preserved.', 'sys');
+      showToast('Session tokens restored', 'info');
+    } else if (session.role === 'peer' && session.sessionToken) {
+      peerSessionKey = session.sessionToken;
+      peerName = session.peerName || '';
+      appendLine('[Session] Previous session token restored. You will be auto-approved on reconnection.', 'sys');
+      showToast('Session token restored', 'info');
+    }
+  }
+}
+
+async function restoreQuickHost(session) {
+  if (isHost || isPeer) return;
+  try {
+    const { joinRoom } = await loadTrystero();
+    quickRoomId = session.roomId;
+    quickRoomPassword = session.password;
+    if (session.approvedKeys) approvedSessionKeys = new Map(session.approvedKeys);
+    if (session.allowInput !== undefined) $('allowRemoteInput').checked = session.allowInput;
+
+    quickRoom = joinRoom({ appId: 'serial-console-v2', password: quickRoomPassword }, quickRoomId);
+    const [sendMsg, getMsg] = quickRoom.makeAction('msg');
+    quickSendMsg = sendMsg;
+
+    getMsg((data, peerId) => handleHostMessage(data, peerId));
+
+    quickRoom.onPeerJoin(peerId => {
+      hostConnections.set(peerId, { pc: null, dc: null, name: '', canWrite: false, approved: false, joinedAt: Date.now() });
+      appendLine(`[P2P Quick] Peer ${peerId.substring(0, 8)} connected to room.`, 'sys');
+    });
+
+    quickRoom.onPeerLeave(peerId => {
+      hostConnections.delete(peerId);
+      pendingConnections = pendingConnections.filter(p => p.peerId !== peerId);
+      renderPending(); updatePeerListUI();
+      appendLine(`[P2P Quick] Peer ${peerId.substring(0, 8)} left.`, 'sys');
+    });
+
+    isHost = true;
+    setP2PMode('quick');
+    $('quickRoomCode').textContent = quickRoomId;
+    $('quickPassword').textContent = quickRoomPassword;
+    $('quickShareBtn').style.display = 'none';
+    $('quickHostActive').style.display = 'block';
+    appendLine(`[Session] Restored Quick Connect host. Room: ${quickRoomId}`, 'sys');
+    showToast('Session restored — room rejoined', 'success');
+  } catch (err) {
+    appendLine(`[Session] Restore failed: ${err.message}`, 'err');
+    clearSession();
+  }
+}
+
+async function restoreQuickPeer(session) {
+  if (isHost || isPeer) return;
+  try {
+    const { joinRoom } = await loadTrystero();
+    quickRoomId = session.roomId;
+    quickRoomPassword = session.password;
+    peerSessionKey = session.sessionToken;
+    peerName = session.peerName || '';
+
+    quickRoom = joinRoom({ appId: 'serial-console-v2', password: quickRoomPassword }, quickRoomId);
+    const [sendMsg, getMsg] = quickRoom.makeAction('msg');
+    quickSendMsg = sendMsg;
+
+    getMsg((data, peerId) => {
+      peerConnection = peerId;
+      handlePeerMessage(data);
+    });
+
+    quickRoom.onPeerJoin(peerId => {
+      peerConnection = peerId;
+      const identifyMsg = { type: 'identify' };
+      if (peerName) identifyMsg.name = peerName;
+      if (peerSessionKey) identifyMsg.sessionToken = peerSessionKey;
+      sendMsg(identifyMsg, peerId);
+      appendLine(`[Session] Rejoined room. Identifying with session token...`, 'sys');
+    });
+
+    quickRoom.onPeerLeave(peerId => {
+      if (peerId === peerConnection) {
+        appendLine('[P2P Quick] Host disconnected. Waiting for reconnection...', 'sys');
+        peerReconnectTimeout = setTimeout(() => {
+          appendLine('[P2P Quick] Host did not return. Disconnecting.', 'err');
+          cleanupPeerState();
+          clearSession();
+        }, 15000);
+      }
+    });
+
+    setP2PMode('quick');
+    appendLine(`[Session] Restoring Quick Connect peer session...`, 'sys');
+    showToast('Reconnecting to room...', 'info');
+  } catch (err) {
+    appendLine(`[Session] Restore failed: ${err.message}`, 'err');
+    clearSession();
+  }
 }
 
 // =============================================
@@ -972,6 +1131,7 @@ function handleHostMessage(msg, peerId) {
           deriveSessionToken(info._hostHalf, msg.peerHalf).then(token => {
             info.sessionToken = token; delete info._hostHalf;
             approvedSessionKeys.set(token, { name: info.name, approvedAt: Date.now() });
+            saveSession();
           });
         }
       }
@@ -1004,6 +1164,7 @@ function handlePeerMessage(msg) {
       $('shareBtn').disabled = false;
       appendLine('[P2P] Host accepted your connection!', 'sys');
       showToast('Connected to host', 'success');
+      saveSession();
       break;
     case 'rejected':
       appendLine(`[P2P] ${msg.message || 'Connection rejected.'}`, 'err');
@@ -1015,6 +1176,7 @@ function handlePeerMessage(msg) {
       showToast('Kicked', 'error');
       peerSessionKey = null;
       cleanupPeerState();
+      clearSession();
       break;
     case 'terminal':
       // Display raw text from host (already processed into terminal format)
@@ -1053,7 +1215,7 @@ function handlePeerMessage(msg) {
         sendToPeer({ type: 'session-exchange', peerHalf: myHalf });
         deriveSessionToken(msg.hostHalf, myHalf).then(token => {
           peerSessionKey = token;
-          try { sessionStorage.setItem('sc-session', JSON.stringify({ token, role: 'peer' })); } catch {}
+          saveSession();
         });
       }
       break;
@@ -1146,6 +1308,7 @@ function updatePeerListUI() {
 
 function cleanupPeerState() {
   isPeer = false; canWrite = false; peerConnection = null;
+  if (peerReconnectTimeout) { clearTimeout(peerReconnectTimeout); peerReconnectTimeout = null; }
   $('peerViewArea').style.display = 'none';
   $('serialInput').disabled = !isConnected; $('sendBtn').disabled = !isConnected;
 }
@@ -1211,6 +1374,7 @@ async function privateStartHost() {
     $('privateShareBtn').style.display = 'none';
     $('privateHostActive').style.display = 'block';
     appendLine('[P2P Private] Invite link created and copied.', 'sys');
+    saveSession();
     showToast('Invite link copied!', 'success');
   } catch (err) {
     appendLine(`[P2P Private] Error: ${err.message}`, 'err');
@@ -1305,6 +1469,7 @@ function disconnectPeer() {
   if (quickRoom) { try { quickRoom.leave(); } catch {} quickRoom = null; quickSendMsg = null; }
   peerConnection = null; peerSessionKey = null;
   cleanupPeerState();
+  clearSession();
   appendLine('[P2P] Disconnected.', 'sys');
 }
 
@@ -1342,6 +1507,7 @@ async function quickStartHost() {
     $('quickHostActive').style.display = 'block';
     appendLine(`[P2P Quick] Sharing started. Room: ${quickRoomId}`, 'sys');
     showToast('Room created!', 'success');
+    saveSession();
   } catch (err) {
     appendLine(`[P2P Quick] Error: ${err.message}`, 'err');
     showToast('Failed to create room', 'error');
@@ -1356,6 +1522,7 @@ function quickStopHost() {
   for (const [pid] of hostConnections) { sendToHostPeer(pid, { type: 'kicked', message: 'Host stopped sharing.' }); }
   if (quickRoom) { try { quickRoom.leave(); } catch {} quickRoom = null; quickSendMsg = null; }
   isHost = false; hostConnections.clear(); pendingConnections = []; approvedSessionKeys.clear();
+  clearSession();
   $('quickShareBtn').style.display = 'block';
   $('quickHostActive').style.display = 'none';
   $('peerListArea').style.display = 'none';
@@ -1372,6 +1539,10 @@ async function quickJoinSession() {
   if (!roomId || roomId.length !== 6) { showToast('Enter a 6-char room code', 'error'); return; }
   if (!pass) { showToast('Enter the password', 'error'); return; }
 
+  // Store in module variables for session persistence
+  quickRoomId = roomId;
+  quickRoomPassword = pass;
+
   try {
     const { joinRoom, selfId } = await loadTrystero();
     quickRoom = joinRoom({ appId: 'serial-console-v2', password: pass }, roomId);
@@ -1380,11 +1551,13 @@ async function quickJoinSession() {
 
     getMsg((data, peerId) => {
       peerConnection = peerId;
+      if (peerReconnectTimeout) { clearTimeout(peerReconnectTimeout); peerReconnectTimeout = null; }
       handlePeerMessage(data);
     });
 
     quickRoom.onPeerJoin(peerId => {
       peerConnection = peerId;
+      if (peerReconnectTimeout) { clearTimeout(peerReconnectTimeout); peerReconnectTimeout = null; }
       // Send identify
       const identifyMsg = { type: 'identify' };
       if (peerName) identifyMsg.name = peerName;
@@ -1395,8 +1568,12 @@ async function quickJoinSession() {
 
     quickRoom.onPeerLeave(peerId => {
       if (peerId === peerConnection) {
-        appendLine('[P2P Quick] Host disconnected.', 'err');
-        cleanupPeerState();
+        appendLine('[P2P Quick] Host disconnected. Waiting for reconnection...', 'sys');
+        peerReconnectTimeout = setTimeout(() => {
+          appendLine('[P2P Quick] Host did not return. Disconnecting.', 'err');
+          cleanupPeerState();
+          clearSession();
+        }, 15000);
       }
     });
 
@@ -1704,26 +1881,35 @@ if ('serial' in navigator) navigator.serial.addEventListener('disconnect', e => 
 // Parse URL hash for invite links
 function checkUrlHash() {
   const hash = window.location.hash;
-  if (!hash || hash.length < 5) return;
+  if (!hash || hash.length < 5) return false;
   const params = new URLSearchParams(hash.substring(1));
   const mode = params.get('m');
   const offer = params.get('o');
   const key = params.get('k');
-  if (!offer || !key) return;
+  if (!offer || !key) return false;
 
   if (mode === 'p') {
     // Private P2P console sharing invite
     privateJoinViaLink(offer, key);
+    return true;
   } else if (mode === 'f') {
     // Private file share invite
     switchMainTab('fileshare'); setFSMode('private');
     fsPrivateJoinViaLink(offer, key);
+    return true;
   }
+  return false;
 }
 
-// Load settings and check URL hash on start
+// Save session state before page unload (refresh/navigate)
+window.addEventListener('beforeunload', () => {
+  if (isHost || isPeer) saveSession();
+});
+
+// Load settings, check URL hash, and restore session on start
 loadSettings();
-checkUrlHash();
+const hasInviteLink = checkUrlHash();
+if (!hasInviteLink) restoreSession();
 
 // Expose functions to window for onclick handlers
 Object.assign(window, {
