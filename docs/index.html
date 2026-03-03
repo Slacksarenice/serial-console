@@ -1,2262 +1,1744 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Serial Console</title>
-  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-  <style>
-    :root {
-      --bg: #1a1a2e;
-      --terminal-bg: #0d0d1a;
-      --text: #00ff88;
-      --text-dim: #00cc6a;
-      --accent: #00b4d8;
-      --border: #2a2a4a;
-      --toolbar-bg: #16213e;
-      --button-bg: #0f3460;
-      --button-hover: #1a4a7a;
-      --danger: #e74c3c;
-      --danger-hover: #c0392b;
-      --scrollbar: #2a2a4a;
-      --scrollbar-thumb: #00ff8844;
-    }
-
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
-      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-      background: var(--bg);
-      color: #e0e0e0;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-
-    header {
-      background: var(--toolbar-bg);
-      border-bottom: 1px solid var(--border);
-      padding: 10px 20px;
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      flex-shrink: 0;
-    }
-
-    header h1 {
-      font-size: 1.1rem;
-      font-weight: 600;
-      color: var(--accent);
-      letter-spacing: 0.5px;
-    }
-
-    header h1 span {
-      color: var(--text);
-    }
-
-    .toolbar {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .toolbar label {
-      font-size: 0.75rem;
-      color: #8892b0;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
-
-    .toolbar select, .toolbar input[type="number"] {
-      background: var(--terminal-bg);
-      color: #e0e0e0;
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 4px 8px;
-      font-size: 0.8rem;
-      outline: none;
-    }
-
-    .toolbar select:focus, .toolbar input[type="number"]:focus {
-      border-color: var(--accent);
-    }
-
-    .toolbar input[type="number"] {
-      width: 80px;
-    }
-
-    button {
-      background: var(--button-bg);
-      color: #e0e0e0;
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 6px 14px;
-      font-size: 0.8rem;
-      cursor: pointer;
-      transition: background 0.15s, border-color 0.15s;
-      display: flex;
-      align-items: center;
-      gap: 5px;
-    }
-
-    button:hover {
-      background: var(--button-hover);
-      border-color: var(--accent);
-    }
-
-    button:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
-
-    button.connect {
-      background: #0a3d2a;
-      border-color: #00ff8844;
-      color: var(--text);
-    }
-
-    button.connect:hover:not(:disabled) {
-      background: #0d5a3a;
-    }
-
-    button.disconnect {
-      background: #3d0a0a;
-      border-color: #e74c3c44;
-      color: var(--danger);
-    }
-
-    button.disconnect:hover:not(:disabled) {
-      background: #5a1a1a;
-    }
-
-    .status-bar {
-      background: var(--toolbar-bg);
-      border-bottom: 1px solid var(--border);
-      padding: 4px 20px;
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      font-size: 0.75rem;
-      color: #8892b0;
-      flex-shrink: 0;
-    }
-
-    .status-indicator {
-      display: inline-block;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--danger);
-      margin-right: 4px;
-    }
-
-    .status-indicator.connected {
-      background: var(--text);
-      box-shadow: 0 0 6px var(--text);
-    }
-
-    #terminal-container {
-      flex: 1;
-      overflow: hidden;
-      position: relative;
-    }
-
-    #terminal {
-      width: 100%;
-      height: 100%;
-      overflow-y: auto;
-      padding: 12px 16px;
-      font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
-      font-size: 14px;
-      line-height: 1.5;
-      color: var(--text);
-      background: var(--terminal-bg);
-      white-space: pre-wrap;
-      word-break: break-all;
-      cursor: text;
-    }
-
-    #terminal::-webkit-scrollbar {
-      width: 8px;
-    }
-
-    #terminal::-webkit-scrollbar-track {
-      background: var(--terminal-bg);
-    }
-
-    #terminal::-webkit-scrollbar-thumb {
-      background: var(--scrollbar-thumb);
-      border-radius: 4px;
-    }
-
-    #terminal .system-msg {
-      color: var(--accent);
-    }
-
-    #terminal .error-msg {
-      color: var(--danger);
-    }
-
-    #terminal .sent-msg {
-      color: #ffd700;
-    }
-
-    .input-bar {
-      display: flex;
-      align-items: center;
-      background: var(--toolbar-bg);
-      border-top: 1px solid var(--border);
-      padding: 8px 16px;
-      gap: 8px;
-      flex-shrink: 0;
-    }
-
-    .input-bar input[type="text"] {
-      flex: 1;
-      background: var(--terminal-bg);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 8px 12px;
-      font-family: 'Cascadia Code', 'Fira Code', monospace;
-      font-size: 0.9rem;
-      outline: none;
-    }
-
-    .input-bar input[type="text"]:focus {
-      border-color: var(--accent);
-    }
-
-    .input-bar input[type="text"]::placeholder {
-      color: #4a4a6a;
-    }
-
-    .line-ending-select {
-      font-size: 0.75rem;
-    }
-
-    .checkbox-label {
-      font-size: 0.75rem;
-      color: #8892b0;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      cursor: pointer;
-      user-select: none;
-    }
-
-    .checkbox-label input {
-      accent-color: var(--accent);
-    }
-
-    footer {
-      background: var(--toolbar-bg);
-      border-top: 1px solid var(--border);
-      padding: 4px 20px;
-      font-size: 0.7rem;
-      color: #4a4a6a;
-      text-align: center;
-      flex-shrink: 0;
-    }
-
-    footer a {
-      color: var(--accent);
-      text-decoration: none;
-    }
-
-    /* Help modal */
-    .help-overlay {
-      display: none;
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.6);
-      z-index: 999;
-      justify-content: center;
-      align-items: center;
-    }
-
-    .help-overlay.visible {
-      display: flex;
-    }
-
-    .help-modal {
-      background: var(--toolbar-bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      max-width: 600px;
-      width: 90%;
-      max-height: 80vh;
-      overflow-y: auto;
-      padding: 24px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-    }
-
-    .help-modal h2 {
-      color: var(--accent);
-      font-size: 1.1rem;
-      margin-bottom: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .help-modal h3 {
-      color: var(--text);
-      font-size: 0.9rem;
-      margin: 14px 0 6px;
-    }
-
-    .help-modal p, .help-modal li {
-      color: #b0b0cc;
-      font-size: 0.8rem;
-      line-height: 1.6;
-      margin-bottom: 6px;
-    }
-
-    .help-modal ul {
-      padding-left: 18px;
-      margin-bottom: 10px;
-    }
-
-    .help-modal code {
-      background: var(--terminal-bg);
-      color: var(--text);
-      padding: 1px 5px;
-      border-radius: 3px;
-      font-family: 'Cascadia Code', monospace;
-      font-size: 0.78rem;
-    }
-
-    .help-modal .close-help {
-      cursor: pointer;
-      color: #8892b0;
-      font-size: 1.2rem;
-      padding: 2px 6px;
-      border-radius: 4px;
-    }
-
-    .help-modal .close-help:hover {
-      color: var(--danger);
-      background: rgba(231,76,60,0.1);
-    }
-
-    .help-modal::-webkit-scrollbar { width: 6px; }
-    .help-modal::-webkit-scrollbar-track { background: var(--toolbar-bg); }
-    .help-modal::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
-
-    /* Section labels */
-    .section-label {
-      font-size: 0.6rem;
-      text-transform: uppercase;
-      letter-spacing: 1.5px;
-      color: #4a5580;
-      font-weight: 600;
-      flex-shrink: 0;
-    }
-
-    .remote-bar {
-      background: var(--toolbar-bg);
-      border-bottom: 1px solid var(--border);
-      padding: 6px 20px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      font-size: 0.8rem;
-      flex-shrink: 0;
-      flex-wrap: wrap;
-    }
-
-    .remote-bar input[type="text"] {
-      background: var(--terminal-bg);
-      color: var(--accent);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 4px 8px;
-      font-family: 'Cascadia Code', monospace;
-      font-size: 0.85rem;
-      width: 100px;
-      outline: none;
-      letter-spacing: 2px;
-      text-align: center;
-    }
-
-    .remote-bar input[type="text"]:focus {
-      border-color: var(--accent);
-    }
-
-    .room-id-display {
-      background: var(--terminal-bg);
-      color: var(--accent);
-      border: 1px solid var(--accent);
-      border-radius: 4px;
-      padding: 4px 10px;
-      font-family: 'Cascadia Code', monospace;
-      font-size: 0.95rem;
-      letter-spacing: 3px;
-      user-select: all;
-      cursor: pointer;
-    }
-
-    .remote-bar .separator {
-      color: var(--border);
-      font-size: 1.2rem;
-    }
-
-    .peer-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      background: #0a3d2a;
-      border: 1px solid #00ff8844;
-      border-radius: 12px;
-      padding: 2px 10px;
-      font-size: 0.7rem;
-      color: var(--text);
-    }
-
-    .peer-badge.remote-peer {
-      background: #1a1a4a;
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-
-    .peer-badge.clickable {
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-
-    .peer-badge.clickable:hover {
-      background: #0d5a3a;
-    }
-
-    .peer-list-panel {
-      display: none;
-      position: absolute;
-      top: 100%;
-      right: 0;
-      background: var(--toolbar-bg);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      min-width: 320px;
-      max-width: 420px;
-      max-height: 300px;
-      overflow-y: auto;
-      z-index: 100;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
-      font-size: 0.75rem;
-    }
-
-    .peer-list-panel.visible {
-      display: block;
-    }
-
-    .peer-list-header {
-      padding: 8px 12px;
-      font-weight: 600;
-      color: var(--accent);
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .peer-list-item {
-      padding: 6px 12px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .peer-list-item:last-child {
-      border-bottom: none;
-    }
-
-    .peer-list-item .peer-ip {
-      color: var(--text);
-      font-family: 'Cascadia Code', monospace;
-      font-size: 0.8rem;
-    }
-
-    .peer-list-item .peer-id {
-      color: #8892b0;
-      font-size: 0.65rem;
-      font-family: monospace;
-    }
-
-    .peer-list-item .peer-duration {
-      color: #8892b0;
-      font-size: 0.65rem;
-      margin-left: auto;
-    }
-
-    .peer-list-item .peer-perm {
-      font-size: 0.6rem;
-      padding: 1px 6px;
-      border-radius: 8px;
-    }
-
-    .peer-list-item .peer-perm.rw {
-      background: #0a3d2a;
-      color: var(--text);
-      cursor: pointer;
-      border: 1px solid #00ff8844;
-    }
-
-    .peer-list-item .peer-perm.rw:hover {
-      background: #0d5a3a;
-    }
-
-    .peer-list-item .peer-perm.ro {
-      background: #3d2a0a;
-      color: #ffd700;
-      cursor: pointer;
-      border: 1px solid #ffd70044;
-    }
-
-    .peer-list-item .peer-perm.ro:hover {
-      background: #5a3d0a;
-    }
-
-    .peer-list-empty {
-      padding: 12px;
-      text-align: center;
-      color: #4a4a6a;
-    }
-
-    .pending-bar {
-      background: #2a1a00;
-      border-bottom: 1px solid #ffd70044;
-      padding: 0;
-      flex-shrink: 0;
-      overflow: hidden;
-      max-height: 0;
-      transition: max-height 0.3s ease, padding 0.3s ease;
-    }
-
-    .pending-bar.has-pending {
-      max-height: 300px;
-      padding: 6px 20px;
-    }
-
-    .pending-request {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 4px 0;
-      font-size: 0.8rem;
-      color: #ffd700;
-    }
-
-    .pending-request .pending-info {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .pending-request .pending-name {
-      color: var(--accent);
-      font-weight: 600;
-    }
-
-    .pending-request .pending-ip {
-      color: #8892b0;
-      font-family: 'Cascadia Code', monospace;
-      font-size: 0.75rem;
-    }
-
-    .pending-request button.accept-btn {
-      background: #0a3d2a;
-      border-color: #00ff8844;
-      color: var(--text);
-      padding: 3px 10px;
-      font-size: 0.7rem;
-    }
-
-    .pending-request button.accept-btn:hover {
-      background: #0d5a3a;
-    }
-
-    .pending-request button.reject-btn {
-      background: #3d0a0a;
-      border-color: #e74c3c44;
-      color: var(--danger);
-      padding: 3px 10px;
-      font-size: 0.7rem;
-    }
-
-    .pending-request button.reject-btn:hover {
-      background: #5a1a1a;
-    }
-
-    .permission-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 0.7rem;
-      padding: 2px 8px;
-      border-radius: 12px;
-      border: 1px solid;
-    }
-
-    .permission-badge.read-write {
-      background: #0a3d2a;
-      border-color: #00ff8844;
-      color: var(--text);
-    }
-
-    .permission-badge.view-only {
-      background: #3d2a0a;
-      border-color: #ffd70044;
-      color: #ffd700;
-    }
-
-    #terminal .remote-msg {
-      color: #bb86fc;
-    }
-
-
-    @media (max-width: 768px) {
-      header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 8px;
-        padding: 8px 12px;
-      }
-      .toolbar {
-        width: 100%;
-      }
-      .remote-bar {
-        padding: 6px 12px;
-        gap: 8px;
-      }
-      .status-bar {
-        padding: 4px 12px;
-        gap: 8px;
-        flex-wrap: wrap;
-      }
-      .input-bar {
-        padding: 6px 8px;
-        gap: 4px;
-        flex-wrap: wrap;
-      }
-      .input-bar input[type="text"] {
-        font-size: 16px; /* prevents iOS zoom on focus */
-        padding: 10px 12px;
-      }
-      #terminal {
-        font-size: 12px;
-        padding: 8px 10px;
-        line-height: 1.4;
-        -webkit-overflow-scrolling: touch;
-      }
-      button {
-        padding: 8px 12px;
-        min-height: 36px;
-        font-size: 0.8rem;
-      }
-      footer {
-        padding: 4px 12px;
-      }
-    }
-
-    /* Peer-mode mobile: hide host controls, maximize terminal */
-    body.peer-mode header {
-      padding: 4px 12px;
-    }
-
-    body.peer-mode .toolbar {
-      display: none;
-    }
-
-    body.peer-mode .remote-bar {
-      padding: 4px 12px;
-    }
-
-    body.peer-mode .remote-bar #shareBtn,
-    body.peer-mode .remote-bar .separator,
-    body.peer-mode .remote-bar #peerNameInput,
-    body.peer-mode .remote-bar #joinRoomInput,
-    body.peer-mode .remote-bar #joinBtn {
-      display: none;
-    }
-
-    @media (max-width: 768px) {
-      body.peer-mode header h1 {
-        font-size: 0.9rem;
-      }
-      body.peer-mode .status-bar {
-        font-size: 0.65rem;
-        padding: 2px 12px;
-      }
-      body.peer-mode .input-bar {
-        flex-wrap: nowrap;
-      }
-      body.peer-mode .line-ending-select {
-        display: none;
-      }
-      body.peer-mode footer {
-        display: none;
-      }
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Serial Console</title>
+<style>
+:root {
+  --bg-deep: #0a0e14;
+  --bg-panel: #0d1117;
+  --bg-surface: #161b22;
+  --bg-elevated: #1c2129;
+  --border: #30363d;
+  --border-bright: #484f58;
+  --text-primary: #e6edf3;
+  --text-secondary: #8b949e;
+  --text-muted: #484f58;
+  --accent: #00e676;
+  --accent-dim: #00c853;
+  --accent-glow: rgba(0, 230, 118, 0.15);
+  --danger: #f85149;
+  --warning: #d29922;
+  --info: #58a6ff;
+  --rx-color: #79c0ff;
+  --tx-color: #ffa657;
+  --file-color: #d2a8ff;
+  --font-mono: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
+  --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --radius: 8px;
+  --radius-sm: 4px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--font-ui); background: var(--bg-deep); color: var(--text-primary); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+/* Header */
+.header { display: flex; align-items: center; justify-content: space-between; padding: 10px 20px; background: var(--bg-panel); border-bottom: 1px solid var(--border); flex-shrink: 0; z-index: 10; }
+.header-left { display: flex; align-items: center; gap: 14px; }
+.logo { display: flex; align-items: center; gap: 10px; }
+.logo-icon { width: 30px; height: 30px; background: linear-gradient(135deg, var(--accent) 0%, #00b068 100%); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 15px; box-shadow: 0 0 20px var(--accent-glow); }
+.logo-text { font-weight: 700; font-size: 15px; letter-spacing: -0.3px; }
+.logo-sub { font-size: 10px; color: var(--text-muted); font-weight: 400; letter-spacing: 0.5px; text-transform: uppercase; }
+.status-badge { display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; font-family: var(--font-mono); background: var(--bg-surface); border: 1px solid var(--border); }
+.status-badge.connected { background: rgba(0,230,118,0.08); border-color: rgba(0,230,118,0.3); color: var(--accent); }
+.status-badge.disconnected { color: var(--text-muted); }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); }
+.status-badge.connected .status-dot { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse-dot 2s infinite; }
+@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.4} }
+.header-right { display: flex; align-items: center; gap: 8px; }
+
+/* Tabs */
+.main-tabs { display: flex; background: var(--bg-panel); border-bottom: 1px solid var(--border); flex-shrink: 0; padding: 0 20px; }
+.main-tab { padding: 10px 20px; font-size: 12px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; color: var(--text-muted); transition: all 0.15s; background: none; border-top: none; border-left: none; border-right: none; letter-spacing: 0.3px; }
+.main-tab:hover { color: var(--text-secondary); }
+.main-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-view { display: none; flex: 1; overflow: hidden; flex-direction: column; }
+.tab-view.active { display: flex; }
+
+/* Toolbar */
+.toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 20px; background: var(--bg-surface); border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap; }
+.toolbar-group { display: flex; align-items: center; gap: 5px; }
+.toolbar-separator { width: 1px; height: 22px; background: var(--border); margin: 0 2px; }
+label { font-size: 10px; color: var(--text-secondary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+select, input[type="number"] { font-family: var(--font-mono); font-size: 11px; padding: 4px 8px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); outline: none; transition: border-color 0.15s; cursor: pointer; }
+select:hover, input:hover { border-color: var(--border-bright); }
+select:focus, input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+select option { background: var(--bg-panel); }
+
+/* Buttons */
+.btn { font-family: var(--font-ui); font-size: 11px; font-weight: 600; padding: 5px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text-primary); cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.btn:hover { background: var(--bg-surface); border-color: var(--border-bright); }
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: var(--accent); color: #000; border-color: var(--accent); }
+.btn-primary:hover { background: var(--accent-dim); border-color: var(--accent-dim); }
+.btn-danger { background: rgba(248,81,73,0.1); color: var(--danger); border-color: rgba(248,81,73,0.3); }
+.btn-danger:hover { background: rgba(248,81,73,0.2); }
+.btn-file { background: rgba(210,168,255,0.08); color: var(--file-color); border-color: rgba(210,168,255,0.25); }
+.btn-file:hover { background: rgba(210,168,255,0.15); }
+.btn-warning { background: rgba(210,153,34,0.1); color: var(--warning); border-color: rgba(210,153,34,0.3); }
+.btn-warning:hover { background: rgba(210,153,34,0.2); }
+.btn-icon { padding: 5px 7px; font-size: 13px; }
+.btn:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
+
+/* Toggle */
+.toggle-container { display: flex; align-items: center; gap: 5px; }
+.toggle { position: relative; width: 30px; height: 16px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; transition: all 0.2s; }
+.toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted); transition: all 0.2s; }
+.toggle.active { background: var(--accent-glow); border-color: var(--accent); }
+.toggle.active::after { left: 16px; background: var(--accent); }
+
+/* Main layout */
+.main { flex: 1; display: flex; overflow: hidden; position: relative; }
+.terminal-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.terminal-wrapper { flex: 1; position: relative; overflow: hidden; }
+#terminal { width: 100%; height: 100%; overflow-y: auto; padding: 14px 20px; font-family: var(--font-mono); font-size: 12px; line-height: 1.65; white-space: pre-wrap; word-break: break-all; background: var(--bg-deep); }
+#terminal::-webkit-scrollbar { width: 7px; }
+#terminal::-webkit-scrollbar-track { background: transparent; }
+#terminal::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.terminal-wrapper::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.02) 2px,rgba(0,0,0,0.02) 4px); pointer-events: none; }
+.line-rx { color: var(--rx-color); } .line-tx { color: var(--tx-color); } .line-sys { color: var(--text-muted); font-style: italic; } .line-err { color: var(--danger); } .line-file { color: var(--file-color); }
+.line-timestamp { color: var(--text-muted); font-size: 10px; user-select: none; }
+.welcome-message { color: var(--text-muted); text-align: center; padding: 50px 20px; line-height: 2; }
+.welcome-message .big { font-size: 17px; color: var(--text-secondary); font-weight: 600; }
+.welcome-message .accent-text { color: var(--accent); font-weight: 700; }
+
+/* Side panel */
+.side-panel { width: 0; overflow: hidden; background: var(--bg-panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; transition: width 0.25s cubic-bezier(0.4,0,0.2,1); flex-shrink: 0; }
+.side-panel.open { width: 420px; }
+.panel-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.panel-header h3 { font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.panel-close { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 18px; padding: 2px 6px; border-radius: 4px; }
+.panel-close:hover { background: var(--bg-surface); color: var(--text-primary); }
+.panel-tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.panel-tab { flex: 1; padding: 9px 12px; text-align: center; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; border-bottom: 2px solid transparent; color: var(--text-muted); transition: all 0.15s; background: none; border-top: none; border-left: none; border-right: none; }
+.panel-tab:hover { color: var(--text-secondary); background: var(--bg-surface); }
+.panel-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.panel-body { flex: 1; overflow-y: auto; padding: 16px; }
+.panel-body::-webkit-scrollbar { width: 5px; }
+.panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.sp-tab-content { display: none; } .sp-tab-content.active { display: block; }
+
+/* Transfer UI */
+.upload-zone { border: 2px dashed var(--border); border-radius: var(--radius); padding: 30px 20px; text-align: center; cursor: pointer; transition: all 0.2s; margin-bottom: 16px; }
+.upload-zone:hover, .upload-zone.dragover { border-color: var(--file-color); background: rgba(210,168,255,0.04); }
+.upload-zone .icon { font-size: 28px; margin-bottom: 8px; } .upload-zone .title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; } .upload-zone .subtitle { font-size: 11px; color: var(--text-muted); }
+.file-info { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 14px; font-family: var(--font-mono); font-size: 11px; }
+.file-info-row { display: flex; justify-content: space-between; margin-bottom: 6px; } .file-info-row:last-child { margin-bottom: 0; }
+.file-info-label { color: var(--text-muted); } .file-info-value { color: var(--text-primary); font-weight: 500; }
+.file-preview { background: var(--bg-deep); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; font-family: var(--font-mono); font-size: 11px; line-height: 1.5; color: var(--text-secondary); max-height: 120px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; margin-bottom: 14px; }
+.config-textarea { width: 100%; min-height: 250px; font-family: var(--font-mono); font-size: 11px; line-height: 1.6; padding: 12px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-primary); resize: vertical; outline: none; transition: border-color 0.15s; margin-bottom: 14px; }
+.config-textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+.config-textarea::placeholder { color: var(--text-muted); }
+.send-options { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 14px; }
+.option-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; } .option-row:last-child { margin-bottom: 0; }
+.option-label { font-size: 12px; color: var(--text-secondary); font-weight: 500; }
+.option-sublabel { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+.option-input { font-family: var(--font-mono); font-size: 11px; padding: 4px 8px; width: 90px; text-align: right; background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); outline: none; }
+.option-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+.checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); cursor: pointer; }
+.checkbox-row input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
+
+/* Progress */
+.progress-container { display: none; margin-bottom: 14px; } .progress-container.active { display: block; }
+.progress-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.progress-label { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+.progress-pct { font-family: var(--font-mono); font-size: 11px; color: var(--accent); }
+.progress-bar-track { height: 6px; background: var(--bg-deep); border-radius: 3px; overflow: hidden; margin-bottom: 8px; }
+.progress-bar-fill { height: 100%; background: linear-gradient(90deg,var(--accent),#00b068); border-radius: 3px; transition: width 0.15s; width: 0%; }
+.progress-bar-fill.paused { background: var(--warning); } .progress-bar-fill.error { background: var(--danger); }
+.progress-stats { display: flex; gap: 14px; font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); }
+.progress-actions { display: flex; gap: 6px; margin-top: 10px; }
+
+/* Input bar */
+.input-bar { display: flex; align-items: center; gap: 8px; padding: 8px 20px; background: var(--bg-panel); border-top: 1px solid var(--border); flex-shrink: 0; }
+.input-prompt { font-family: var(--font-mono); font-size: 13px; color: var(--accent); font-weight: 700; user-select: none; }
+#serialInput { flex: 1; font-family: var(--font-mono); font-size: 12px; padding: 7px 10px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); outline: none; }
+#serialInput:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+#serialInput::placeholder { color: var(--text-muted); } #serialInput:disabled { opacity: 0.4; }
+.input-options { display: flex; align-items: center; gap: 6px; }
+.line-ending-select { font-family: var(--font-mono); font-size: 10px; padding: 5px 7px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-secondary); cursor: pointer; outline: none; }
+
+/* Footer */
+.footer { display: flex; align-items: center; justify-content: space-between; padding: 3px 20px; background: var(--bg-panel); border-top: 1px solid var(--border); font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); flex-shrink: 0; }
+.footer-stats { display: flex; gap: 14px; } .stat { display: flex; align-items: center; gap: 4px; }
+.stat-rx { color: var(--rx-color); } .stat-tx { color: var(--tx-color); }
+
+/* P2P Sharing UI */
+.p2p-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.p2p-section h4 { font-size: 12px; font-weight: 700; margin-bottom: 12px; color: var(--text-secondary); }
+.p2p-mode-toggle { display: flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; margin-bottom: 14px; }
+.p2p-mode-btn { flex: 1; padding: 7px 10px; font-size: 11px; font-weight: 600; text-align: center; cursor: pointer; background: var(--bg-surface); color: var(--text-muted); border: none; transition: all 0.15s; }
+.p2p-mode-btn.active { background: var(--accent-glow); color: var(--accent); }
+.p2p-mode-btn:hover:not(.active) { color: var(--text-secondary); }
+.room-display { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 14px; text-align: center; }
+.room-code { font-family: var(--font-mono); font-size: 22px; font-weight: 700; color: var(--accent); letter-spacing: 4px; margin: 8px 0; }
+.room-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.peer-list { margin-top: 12px; }
+.peer-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 6px; font-size: 11px; }
+.peer-name { font-weight: 600; color: var(--text-primary); }
+.peer-info-text { color: var(--text-muted); font-family: var(--font-mono); font-size: 10px; }
+.peer-actions { display: flex; gap: 4px; }
+.pending-banner { background: rgba(210,153,34,0.1); border: 1px solid rgba(210,153,34,0.3); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
+.pending-text { font-size: 12px; color: var(--warning); }
+.sdp-display { background: var(--bg-deep); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; font-family: var(--font-mono); font-size: 10px; line-height: 1.4; color: var(--text-secondary); max-height: 100px; overflow-y: auto; word-break: break-all; margin: 10px 0; user-select: all; }
+.sdp-input { width: 100%; font-family: var(--font-mono); font-size: 11px; padding: 8px 10px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); outline: none; margin: 8px 0; }
+.sdp-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+
+/* File Share view */
+.fs-container { flex: 1; display: flex; flex-direction: column; padding: 20px; overflow-y: auto; max-width: 800px; margin: 0 auto; width: 100%; }
+.fs-container h2 { font-size: 16px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+.fs-room-controls { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+.fs-room-controls input { font-family: var(--font-mono); font-size: 12px; padding: 6px 10px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); outline: none; width: 120px; text-transform: uppercase; }
+.fs-room-controls input:focus { border-color: var(--accent); }
+.fs-file-list { margin-top: 16px; }
+.fs-file-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; }
+.fs-file-name { font-weight: 600; font-size: 12px; }
+.fs-file-size { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); }
+.fs-file-progress { width: 100%; height: 4px; background: var(--bg-deep); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+.fs-file-progress-bar { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.2s; }
+
+/* Toast */
+.toast { position: fixed; top: 14px; right: 14px; padding: 8px 14px; border-radius: var(--radius); font-size: 12px; font-weight: 600; z-index: 100; transform: translateX(120%); transition: transform 0.3s cubic-bezier(0.4,0,0.2,1); display: flex; align-items: center; gap: 6px; }
+.toast.show { transform: translateX(0); }
+.toast.success { background: rgba(0,230,118,0.12); border: 1px solid rgba(0,230,118,0.3); color: var(--accent); }
+.toast.error { background: rgba(248,81,73,0.12); border: 1px solid rgba(248,81,73,0.3); color: var(--danger); }
+.toast.info { background: rgba(88,166,255,0.12); border: 1px solid rgba(88,166,255,0.3); color: var(--info); }
+.unsupported-banner { display: none; padding: 10px 20px; background: rgba(248,81,73,0.1); border-bottom: 1px solid rgba(248,81,73,0.3); color: var(--danger); font-size: 12px; text-align: center; }
+.unsupported-banner a { color: var(--info); text-decoration: underline; }
+
+/* Settings panel */
+.settings-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 90; justify-content: center; align-items: center; }
+.settings-overlay.visible { display: flex; }
+.settings-modal { background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; max-width: 450px; width: 90%; max-height: 80vh; overflow-y: auto; }
+.settings-modal h3 { font-size: 15px; margin-bottom: 16px; }
+.settings-modal .option-row { margin-bottom: 12px; }
+.settings-modal input[type="text"] { width: 100%; font-family: var(--font-mono); font-size: 11px; padding: 6px 8px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); outline: none; margin-top: 4px; }
+.settings-modal input[type="text"]:focus { border-color: var(--accent); }
+
+@media (max-width: 900px) { .side-panel.open { width: 320px; } }
+@media (max-width: 600px) { .side-panel.open { position: absolute; right: 0; top: 0; bottom: 0; width: 100%; z-index: 50; } .toolbar { padding: 6px 10px; } .header { padding: 8px 10px; } .input-bar { padding: 6px 10px; } #terminal { padding: 10px 12px; } .logo-sub { display: none; } }
+#fileInput { display: none; }
+</style>
 </head>
 <body>
+<div class="unsupported-banner" id="unsupportedBanner">Your browser doesn't support Web Serial API. Use <a href="https://www.google.com/chrome/" target="_blank">Chrome</a> or <a href="https://www.microsoft.com/edge" target="_blank">Edge</a>.</div>
+<div class="toast" id="toast"></div>
+<input type="file" id="fileInput">
 
-  <header>
-    <h1><span>&gt;_</span> Serial Console</h1>
-    <div class="toolbar">
-      <label title="Serial port communication speed in bits per second">Baud:
-        <select id="baudRate">
-          <option value="300">300</option>
-          <option value="1200">1200</option>
-          <option value="2400">2400</option>
-          <option value="4800">4800</option>
-          <option value="9600">9600</option>
-          <option value="19200">19200</option>
-          <option value="38400">38400</option>
-          <option value="57600">57600</option>
-          <option value="115200" selected>115200</option>
-          <option value="230400">230400</option>
-          <option value="460800">460800</option>
-          <option value="921600">921600</option>
-        </select>
-      </label>
-      <label title="Number of data bits per frame (usually 8)">Data Bits:
-        <select id="dataBits">
-          <option value="7">7</option>
-          <option value="8" selected>8</option>
-        </select>
-      </label>
-      <label title="Number of stop bits per frame">Stop Bits:
-        <select id="stopBits">
-          <option value="1" selected>1</option>
-          <option value="2">2</option>
-        </select>
-      </label>
-      <label title="Error-checking parity bit mode">Parity:
-        <select id="parity">
-          <option value="none" selected>None</option>
-          <option value="even">Even</option>
-          <option value="odd">Odd</option>
-        </select>
-      </label>
-      <label title="Hardware flow control (RTS/CTS)">Flow:
-        <select id="flowControl">
-          <option value="none" selected>None</option>
-          <option value="hardware">Hardware</option>
-        </select>
-      </label>
-      <button id="connectBtn" class="connect" onclick="toggleConnection()" title="Open a serial port connection">
-        &#9654; Connect
-      </button>
-      <button onclick="clearTerminal()" title="Clear the terminal output">Clear</button>
-      <button onclick="toggleHelp()" title="How to use this application" style="padding:6px 10px;font-size:0.8rem;">?</button>
+<!-- Settings Modal -->
+<div class="settings-overlay" id="settingsOverlay">
+  <div class="settings-modal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h3>Settings</h3><button class="panel-close" onclick="toggleSettings()">&#x2715;</button></div>
+    <div class="send-options">
+      <h4 style="font-size:12px;margin-bottom:10px;color:var(--text-secondary)">TURN Relay (IP Privacy)</h4>
+      <div class="option-row"><div><div class="option-label">TURN Server URL</div><div class="option-sublabel">e.g. turn:your-server.com:3478</div></div></div>
+      <input type="text" id="turnUrl" placeholder="turn:server.com:3478" style="margin-bottom:8px">
+      <div class="option-row"><div><div class="option-label">Username</div></div></div>
+      <input type="text" id="turnUser" placeholder="username" style="margin-bottom:8px">
+      <div class="option-row"><div><div class="option-label">Credential</div></div></div>
+      <input type="text" id="turnCred" placeholder="credential" style="margin-bottom:8px">
+      <div class="option-row"><label class="checkbox-row"><input type="checkbox" id="turnRelayOnly">Force relay only (hide IPs from peers)</label></div>
     </div>
-  </header>
+    <button class="btn btn-primary" onclick="saveSettings()" style="width:100%;justify-content:center;margin-top:10px">Save Settings</button>
+  </div>
+</div>
 
-  <div class="status-bar">
-    <span><span class="status-indicator" id="statusDot"></span> <span id="statusText">Disconnected</span></span>
-    <span id="portInfo">No port selected</span>
-    <span>RX: <span id="rxCount">0</span> bytes</span>
-    <span>TX: <span id="txCount">0</span> bytes</span>
+<!-- Header -->
+<div class="header">
+  <div class="header-left">
+    <div class="logo"><div class="logo-icon">&#9889;</div><div><div class="logo-text">Serial Console</div><div class="logo-sub">Privacy-First Terminal</div></div></div>
+    <div class="status-badge disconnected" id="statusBadge"><span class="status-dot"></span><span id="statusText">Disconnected</span></div>
+  </div>
+  <div class="header-right">
+    <button class="btn btn-icon" onclick="toggleSettings()" title="Settings">&#9881;</button>
+    <button class="btn btn-primary" id="connectBtn" onclick="toggleConnection()"><span>&#9211;</span> Connect</button>
+  </div>
+</div>
+
+<!-- Main Tabs -->
+<div class="main-tabs">
+  <button class="main-tab active" onclick="switchMainTab('console')">Console</button>
+  <button class="main-tab" onclick="switchMainTab('fileshare')">File Share</button>
+</div>
+
+<!-- ====== CONSOLE TAB ====== -->
+<div class="tab-view active" id="view-console">
+  <div class="toolbar">
+    <div class="toolbar-group"><label>Baud</label><select id="baudRate"><option value="300">300</option><option value="1200">1200</option><option value="2400">2400</option><option value="4800">4800</option><option value="9600" selected>9600</option><option value="19200">19200</option><option value="38400">38400</option><option value="57600">57600</option><option value="115200">115200</option><option value="230400">230400</option><option value="460800">460800</option><option value="921600">921600</option></select></div>
+    <div class="toolbar-separator"></div>
+    <div class="toolbar-group"><label>Data</label><select id="dataBits"><option value="7">7</option><option value="8" selected>8</option></select></div>
+    <div class="toolbar-group"><label>Stop</label><select id="stopBits"><option value="1" selected>1</option><option value="2">2</option></select></div>
+    <div class="toolbar-group"><label>Parity</label><select id="parity"><option value="none" selected>None</option><option value="even">Even</option><option value="odd">Odd</option></select></div>
+    <div class="toolbar-group"><label>Flow</label><select id="flowControl"><option value="none" selected>None</option><option value="hardware">HW</option></select></div>
+    <div class="toolbar-separator"></div>
+    <div class="toolbar-group"><div class="toggle-container"><label>TS</label><div class="toggle" id="timestampToggle" onclick="toggleTimestamps()" title="Timestamps"></div></div></div>
+    <div class="toolbar-group"><div class="toggle-container"><label>Hex</label><div class="toggle" id="hexToggle" onclick="toggleHex()"></div></div></div>
+    <div class="toolbar-group"><div class="toggle-container"><label>Scroll</label><div class="toggle active" id="autoscrollToggle" onclick="toggleAutoscroll()"></div></div></div>
+    <div class="toolbar-separator"></div>
+    <button class="btn btn-icon" onclick="clearTerminal()" title="Clear (Ctrl+L)">&#128465;</button>
+    <button class="btn btn-icon" onclick="downloadLog()" title="Save log">&#128190;</button>
+    <button class="btn" id="dtrBtn" onclick="toggleSignal('dtr')" disabled>DTR</button>
+    <button class="btn" id="rtsBtn" onclick="toggleSignal('rts')" disabled>RTS</button>
+    <div class="toolbar-separator"></div>
+    <button class="btn btn-file" id="transferBtn" onclick="togglePanel()" disabled>&#128194; Transfer</button>
+    <button class="btn" id="shareBtn" onclick="togglePanel('sharing')" disabled>&#128225; Share</button>
   </div>
 
-  <div class="remote-bar" id="remoteBar">
-    <span class="section-label">HOST</span>
-    <button id="shareBtn" onclick="startSharing()" title="Start sharing your serial console session with remote peers via WebRTC">&#128279; Share</button>
-    <span id="roomIdContainer" style="display:none;">
-      Room: <span class="room-id-display" id="roomIdDisplay" title="Click to copy room ID" onclick="copyRoomId()"></span>
-      <button onclick="copyRoomId()" style="padding:3px 8px;font-size:0.7rem;" title="Copy room ID to clipboard">Copy</button>
-      <button onclick="generateInviteLink()" style="padding:3px 8px;font-size:0.7rem;" title="Generate a one-time invite link that auto-joins and bypasses approval">Invite Link</button>
-      <button onclick="stopSharing()" class="disconnect" style="padding:3px 8px;font-size:0.7rem;" title="Stop sharing and disconnect all peers">Stop</button>
-    </span>
-    <label class="checkbox-label" id="allowInputLabel" style="display:none;" title="When enabled, all connected peers can send commands to the serial port">
-      <input type="checkbox" id="allowRemoteInput" onchange="updatePeerPermissions()"> Allow Input
-    </label>
-    <span style="position:relative;display:inline-flex;align-items:center;">
-      <span id="peerCount" style="display:none;" class="peer-badge clickable" onclick="togglePeerList()" title="Click to view connected peers, toggle permissions, or kick">0 peers</span>
-      <div id="peerListPanel" class="peer-list-panel">
-        <div class="peer-list-header">
-          <span>Connected Peers</span>
-          <span id="peerListClose" style="cursor:pointer;color:#8892b0;" onclick="togglePeerList()" title="Close peer list">&times;</span>
-        </div>
-        <div id="peerListBody"></div>
+  <div class="main">
+    <div class="terminal-container">
+      <div class="terminal-wrapper">
+        <div id="terminal"><div class="welcome-message"><div class="big">Serial Console</div><br>Click <span class="accent-text">Connect</span> to open a serial port.<br>Use <span class="accent-text">Transfer</span> to send files/configs to the device.<br>Use <span class="accent-text">Share</span> for P2P remote sharing.<br><br>Chromium-based browser required (Chrome, Edge, Opera).</div></div>
       </div>
-    </span>
-    <span class="separator">|</span>
-    <span class="section-label">JOIN</span>
-    <input type="text" id="peerNameInput" placeholder="Your Name" maxlength="20" title="Set a friendly name visible to the host (optional)" style="width:110px;background:var(--terminal-bg);color:#e0e0e0;border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:0.8rem;outline:none;">
-    <input type="text" id="joinRoomInput" placeholder="Room ID" maxlength="6" title="Enter the 6-character room ID shared by the host" style="text-transform:uppercase;">
-    <button id="joinBtn" onclick="joinSession()" title="Connect to a shared session using the room ID">Join</button>
-    <span id="peerStatus" style="display:none;" class="peer-badge remote-peer">Connected to host</span>
-    <span id="permissionStatus" style="display:none;" class="permission-badge view-only" title="Your current permission level set by the host">View Only</span>
-    <button id="leaveBtn" style="display:none;padding:3px 8px;font-size:0.7rem;" class="disconnect" onclick="disconnectPeer()" title="Disconnect from the host session">Leave</button>
-  </div>
+      <div class="input-bar">
+        <span class="input-prompt">&#10095;</span>
+        <input type="text" id="serialInput" placeholder="Type command..." disabled autocomplete="off" spellcheck="false">
+        <div class="input-options">
+          <select class="line-ending-select" id="lineEnding" title="Line ending"><option value="\r\n">CR+LF</option><option value="\n">LF</option><option value="\r">CR</option><option value="">None</option></select>
+          <button class="btn" id="sendBtn" onclick="sendData()" disabled>Send</button>
+        </div>
+      </div>
+    </div>
 
-  <div id="pendingBar" class="pending-bar">
-    <div id="pendingList"></div>
-  </div>
+    <!-- Side Panel -->
+    <div class="side-panel" id="sidePanel">
+      <div class="panel-header"><h3 id="panelTitle">&#128225; Data Transfer</h3><button class="panel-close" onclick="closePanel()">&#x2715;</button></div>
+      <div class="panel-tabs" id="panelTabs">
+        <button class="panel-tab active" onclick="switchPanelTab('file')">File Upload</button>
+        <button class="panel-tab" onclick="switchPanelTab('config')">Paste Config</button>
+        <button class="panel-tab" onclick="switchPanelTab('p2p')">P2P Sharing</button>
+      </div>
+      <div class="panel-body">
+        <!-- File Upload Tab -->
+        <div class="sp-tab-content active" id="sptab-file">
+          <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()"><div class="icon">&#128193;</div><div class="title">Drop file here or click to browse</div><div class="subtitle">.txt, .cfg, .conf, .log, .csv, .json, .xml</div></div>
+          <div id="fileDetails" style="display:none">
+            <div class="file-info"><div class="file-info-row"><span class="file-info-label">Name</span><span class="file-info-value" id="fileName">-</span></div><div class="file-info-row"><span class="file-info-label">Size</span><span class="file-info-value" id="fileSize">-</span></div><div class="file-info-row"><span class="file-info-label">Lines</span><span class="file-info-value" id="fileLines">-</span></div></div>
+            <div class="file-preview" id="filePreview"></div>
+            <div class="send-options">
+              <div class="option-row"><div><div class="option-label">Line Delay (ms)</div><div class="option-sublabel">Pause between lines</div></div><input type="number" class="option-input" id="fileLineDelay" value="100" min="0" max="10000" step="10"></div>
+              <div class="option-row"><div><div class="option-label">Char Delay (ms)</div><div class="option-sublabel">Per-character throttle</div></div><input type="number" class="option-input" id="fileCharDelay" value="0" min="0" max="1000" step="1"></div>
+              <div class="option-row"><div><div class="option-label">Line Ending</div></div><select class="option-input" id="fileLineEndingOverride" style="width:auto"><option value="auto">Auto-detect</option><option value="\r\n">CR+LF</option><option value="\n">LF</option><option value="\r">CR</option></select></div>
+              <div class="option-row"><label class="checkbox-row"><input type="checkbox" id="fileEchoLocal" checked>Echo sent lines</label></div>
+              <div class="option-row"><label class="checkbox-row"><input type="checkbox" id="fileSkipEmpty">Skip empty lines</label></div>
+              <div class="option-row"><label class="checkbox-row"><input type="checkbox" id="fileSkipComments">Skip comments (# or !)</label></div>
+              <div class="option-row"><label class="checkbox-row"><input type="checkbox" id="fileWaitPrompt">Wait for device prompt</label></div>
+              <div class="option-row" id="promptPatternRow" style="display:none"><div><div class="option-label">Prompt Regex</div></div><input type="text" class="option-input" id="filePromptPattern" value="[#>$]\s*$" style="width:140px;font-size:10px"></div>
+            </div>
+            <div class="progress-container" id="fileProgress">
+              <div class="progress-header"><span class="progress-label" id="fileProgressLabel">Sending...</span><span class="progress-pct" id="fileProgressPct">0%</span></div>
+              <div class="progress-bar-track"><div class="progress-bar-fill" id="fileProgressBar"></div></div>
+              <div class="progress-stats"><span id="fileProgressLines">0/0 lines</span><span id="fileProgressBytes">0 B</span><span id="fileProgressEta">ETA: --</span></div>
+              <div class="progress-actions"><button class="btn btn-warning" id="filePauseBtn" onclick="pauseTransfer('file')">Pause</button><button class="btn btn-danger" id="fileCancelBtn" onclick="cancelTransfer('file')">Cancel</button></div>
+            </div>
+            <button class="btn btn-primary" id="fileSendBtn" onclick="startFileTransfer()" style="width:100%;justify-content:center;padding:8px">Send File</button>
+          </div>
+        </div>
 
-  <div id="terminal-container">
-    <div id="terminal" tabindex="0"></div>
-  </div>
+        <!-- Config Paste Tab -->
+        <div class="sp-tab-content" id="sptab-config">
+          <textarea class="config-textarea" id="configText" placeholder="Paste device configuration here..." spellcheck="false"></textarea>
+          <div class="file-info" style="margin-bottom:14px"><div class="file-info-row"><span class="file-info-label">Characters</span><span class="file-info-value" id="configChars">0</span></div><div class="file-info-row"><span class="file-info-label">Lines</span><span class="file-info-value" id="configLines">0</span></div></div>
+          <div class="send-options">
+            <div class="option-row"><div><div class="option-label">Line Delay (ms)</div></div><input type="number" class="option-input" id="configLineDelay" value="150" min="0" max="10000" step="10"></div>
+            <div class="option-row"><div><div class="option-label">Char Delay (ms)</div></div><input type="number" class="option-input" id="configCharDelay" value="0" min="0" max="1000" step="1"></div>
+            <div class="option-row"><div><div class="option-label">Line Ending</div></div><select class="option-input" id="configLineEndingSend" style="width:auto"><option value="\r\n">CR+LF</option><option value="\n">LF</option><option value="\r" selected>CR</option></select></div>
+            <div class="option-row"><label class="checkbox-row"><input type="checkbox" id="configEchoLocal" checked>Echo sent lines</label></div>
+            <div class="option-row"><label class="checkbox-row"><input type="checkbox" id="configSkipEmpty">Skip empty lines</label></div>
+            <div class="option-row"><label class="checkbox-row"><input type="checkbox" id="configSkipComments">Skip comments (# or !)</label></div>
+            <div class="option-row"><label class="checkbox-row"><input type="checkbox" id="configWaitPrompt">Wait for device prompt</label></div>
+            <div class="option-row" id="configPromptPatternRow" style="display:none"><div><div class="option-label">Prompt Regex</div></div><input type="text" class="option-input" id="configPromptPattern" value="[#>$]\s*$" style="width:140px;font-size:10px"></div>
+          </div>
+          <div class="progress-container" id="configProgress">
+            <div class="progress-header"><span class="progress-label" id="configProgressLabel">Sending...</span><span class="progress-pct" id="configProgressPct">0%</span></div>
+            <div class="progress-bar-track"><div class="progress-bar-fill" id="configProgressBar"></div></div>
+            <div class="progress-stats"><span id="configProgressLines">0/0 lines</span><span id="configProgressBytes">0 B</span><span id="configProgressEta">ETA: --</span></div>
+            <div class="progress-actions"><button class="btn btn-warning" id="configPauseBtn" onclick="pauseTransfer('config')">Pause</button><button class="btn btn-danger" id="configCancelBtn" onclick="cancelTransfer('config')">Cancel</button></div>
+          </div>
+          <button class="btn btn-primary" id="configSendBtn" onclick="startConfigTransfer()" style="width:100%;justify-content:center;padding:8px">Send Configuration</button>
+        </div>
 
-  <div class="input-bar">
-    <input type="text" id="sendInput" placeholder="Type command and press Enter..." disabled>
-    <label class="line-ending-select" title="Line ending character(s) appended when sending commands">
-      <select id="lineEnding">
-        <option value="\r\n">CR+LF</option>
-        <option value="\r">CR</option>
-        <option value="\n" selected>LF</option>
-        <option value="">None</option>
-      </select>
-    </label>
-    <label class="checkbox-label" title="Show sent commands in the terminal output">
-      <input type="checkbox" id="echoLocal" checked> Echo
-    </label>
-    <label class="checkbox-label" title="Automatically scroll to the bottom on new output">
-      <input type="checkbox" id="autoScroll" checked> Auto-scroll
-    </label>
-    <button id="sendBtn" disabled onclick="handleSend()" title="Send the command to the serial port (or press Enter)">Send</button>
-  </div>
+        <!-- P2P Sharing Tab -->
+        <div class="sp-tab-content" id="sptab-p2p">
+          <div class="p2p-mode-toggle">
+            <button class="p2p-mode-btn active" onclick="setP2PMode('private')">Private Mode</button>
+            <button class="p2p-mode-btn" onclick="setP2PMode('quick')">Quick Connect</button>
+          </div>
 
-  <footer>
-    Web Serial API &mdash; requires Chrome/Edge 89+ &middot; <a href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Serial_API" target="_blank">MDN Docs</a> &middot; <a href="#" onclick="event.preventDefault();toggleHelp()">Help</a>
-  </footer>
+          <!-- Private Mode UI -->
+          <div id="p2pPrivateUI">
+            <p style="font-size:11px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">No servers involved. Share an encrypted invite link, peer sends back a connection code.</p>
+            <div id="privateHostUI">
+              <button class="btn btn-primary" id="privateShareBtn" onclick="privateStartHost()" style="width:100%;justify-content:center;margin-bottom:12px">Create Invite Link</button>
+              <div id="privateHostActive" style="display:none">
+                <div class="room-display">
+                  <div class="room-label">INVITE LINK CREATED</div>
+                  <p style="font-size:11px;color:var(--text-secondary);margin:8px 0">Link copied to clipboard. Share it with the peer.</p>
+                  <button class="btn" onclick="privateCopyInvite()" style="margin:4px auto;font-size:10px">Copy Link Again</button>
+                </div>
+                <div style="margin-top:12px">
+                  <label style="margin-bottom:6px;display:block">Paste peer's connection code:</label>
+                  <input type="text" class="sdp-input" id="privateAnswerInput" placeholder="Paste connection code here...">
+                  <button class="btn btn-primary" onclick="privateCompleteConnection()" style="width:100%;justify-content:center;margin-top:4px">Complete Connection</button>
+                </div>
+              </div>
+            </div>
+            <div style="margin-top:12px">
+              <label style="margin-bottom:6px;display:block;font-size:11px;color:var(--text-muted)">Or join via invite link pasted in URL bar</label>
+            </div>
+          </div>
 
-  <div id="helpOverlay" class="help-overlay" onclick="if(event.target===this)toggleHelp()">
-    <div class="help-modal">
-      <h2>
-        Serial Console Help
-        <span class="close-help" onclick="toggleHelp()" title="Close">&times;</span>
-      </h2>
+          <!-- Quick Connect UI -->
+          <div id="p2pQuickUI" style="display:none">
+            <p style="font-size:11px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">Uses encrypted MQTT signaling. Share a room code and password.</p>
+            <div id="quickHostUI">
+              <button class="btn btn-primary" id="quickShareBtn" onclick="quickStartHost()" style="width:100%;justify-content:center;margin-bottom:12px">Start Sharing</button>
+              <div id="quickHostActive" style="display:none">
+                <div class="room-display">
+                  <div class="room-label">ROOM CODE</div>
+                  <div class="room-code" id="quickRoomCode">------</div>
+                  <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted)">Password: <span id="quickPassword">---</span></div>
+                  <div style="margin-top:8px;display:flex;gap:6px;justify-content:center">
+                    <button class="btn" onclick="quickCopyInfo()" style="font-size:10px">Copy Info</button>
+                    <button class="btn btn-danger" onclick="quickStopHost()" style="font-size:10px">Stop Sharing</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+              <label style="margin-bottom:6px;display:block">Join a session:</label>
+              <div style="display:flex;gap:6px;margin-bottom:6px">
+                <input type="text" class="sdp-input" id="quickJoinRoom" placeholder="Room code" style="flex:1;margin:0;text-transform:uppercase" maxlength="6">
+                <input type="text" class="sdp-input" id="quickJoinPass" placeholder="Password" style="flex:1;margin:0">
+              </div>
+              <input type="text" class="sdp-input" id="peerNameInput" placeholder="Your name (optional)" style="margin:0 0 6px 0" maxlength="20">
+              <button class="btn btn-primary" id="quickJoinBtn" onclick="quickJoinSession()" style="width:100%;justify-content:center">Join</button>
+            </div>
+          </div>
 
-      <h3>Getting Started</h3>
-      <p>This is a browser-based serial terminal. Click <strong>Connect</strong> to select a USB/serial device and start communicating. Requires Chrome or Edge 89+ with a secure context (HTTPS or localhost).</p>
+          <!-- Shared: Connected peers list -->
+          <div id="peerListArea" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+            <h4 style="font-size:12px;font-weight:700;color:var(--text-secondary);margin-bottom:8px">Connected Peers (<span id="peerCount">0</span>)</h4>
+            <div class="option-row" style="margin-bottom:10px"><label class="checkbox-row"><input type="checkbox" id="allowRemoteInput">Allow remote input (all peers)</label></div>
+            <div id="peerList"></div>
+          </div>
 
-      <h3>Serial Settings</h3>
-      <p>Configure baud rate, data bits, stop bits, parity, and flow control in the toolbar to match your device. The most common configuration is <code>115200 8N1</code> (115200 baud, 8 data bits, no parity, 1 stop bit).</p>
+          <!-- Pending connections -->
+          <div id="pendingArea" style="display:none;margin-top:12px"></div>
 
-      <h3>Sending Commands</h3>
-      <p>Type in the input bar at the bottom and press <strong>Enter</strong> to send. You can also type directly in the terminal area when it has focus. Choose the line ending (CR, LF, CR+LF, or None) to match your device.</p>
-
-      <h3>Remote Sharing (P2P)</h3>
-      <p>Share your serial console with others over the internet using WebRTC peer-to-peer connections. No data passes through a server -- it goes directly between browsers.</p>
-      <ul>
-        <li><strong>Share</strong> -- Creates a room and generates a 6-character Room ID. Give this ID to anyone you want to connect.</li>
-        <li><strong>Invite Link</strong> -- Generates a one-time URL that auto-joins and bypasses the approval step. Each link works once.</li>
-        <li><strong>Join</strong> -- Enter a Room ID (and optionally your name) to connect to someone else's session.</li>
-      </ul>
-
-      <h3>Peer Management (Host)</h3>
-      <ul>
-        <li>Incoming connections require your approval unless they have a valid invite link or are reconnecting with a session token.</li>
-        <li>Click the <strong>peers badge</strong> to see connected peers, their IPs, connection duration, and permissions.</li>
-        <li>Toggle <strong>R/W</strong> or <strong>View</strong> per peer to control who can send commands.</li>
-        <li>Click <strong>X</strong> to kick a peer and revoke their session token.</li>
-      </ul>
-
-      <h3>Session Persistence</h3>
-      <p>Sessions survive page refreshes. The host's approved session tokens and the peer's credentials are stored in <code>sessionStorage</code> (tab-scoped, 30-minute expiry). Reconnecting peers with valid tokens are auto-approved.</p>
-
-      <h3>Security</h3>
-      <ul>
-        <li>All data is encrypted end-to-end via WebRTC DTLS.</li>
-        <li>Session tokens are negotiated via a two-party key exchange (SHA-256 of combined random halves).</li>
-        <li>Invite tokens are one-time use and stripped from the URL bar immediately.</li>
-        <li>Kicked peers have their session tokens revoked.</li>
-      </ul>
+          <!-- Peer view (when connected as peer) -->
+          <div id="peerViewArea" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+            <div class="room-display">
+              <div class="room-label" id="peerViewStatus">CONNECTED</div>
+              <p style="font-size:12px;color:var(--text-secondary);margin:8px 0" id="peerViewPermission">View Only</p>
+              <button class="btn btn-danger" onclick="disconnectPeer()" style="margin:4px auto;font-size:10px">Disconnect</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
+</div>
 
-  <script>
-    let port = null;
-    let reader = null;
-    let writer = null;
-    let isConnected = false;
-    let rxBytes = 0;
-    let txBytes = 0;
-    let keepReading = false;
+<!-- ====== FILE SHARE TAB ====== -->
+<div class="tab-view" id="view-fileshare">
+  <div class="fs-container">
+    <h2>&#128230; P2P File Share</h2>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px;line-height:1.5">Share files directly between browsers. No server stores your files.</p>
 
-    const terminal = document.getElementById('terminal');
-    const connectBtn = document.getElementById('connectBtn');
-    const sendInputEl = document.getElementById('sendInput');
-    const sendBtn = document.getElementById('sendBtn');
-    const statusDot = document.getElementById('statusDot');
-    const statusText = document.getElementById('statusText');
-    const portInfo = document.getElementById('portInfo');
-    const rxCountEl = document.getElementById('rxCount');
-    const txCountEl = document.getElementById('txCount');
+    <div class="p2p-mode-toggle" style="margin-bottom:16px">
+      <button class="p2p-mode-btn active" id="fsModePrivate" onclick="setFSMode('private')">Private Mode</button>
+      <button class="p2p-mode-btn" id="fsModeQuick" onclick="setFSMode('quick')">Quick Connect</button>
+    </div>
 
-    function appendToTerminal(text, className) {
-      const span = document.createElement('span');
-      if (className) span.className = className;
-      span.textContent = text;
-      terminal.appendChild(span);
-      if (document.getElementById('autoScroll').checked) {
-        terminal.scrollTop = terminal.scrollHeight;
-      }
+    <!-- File Share: Private Mode -->
+    <div id="fsPrivateUI">
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <button class="btn btn-primary" id="fsPrivateHostBtn" onclick="fsPrivateHost()">Create Invite</button>
+        <div style="flex:1"></div>
+      </div>
+      <div id="fsPrivateHostActive" style="display:none">
+        <div class="room-display" style="margin-bottom:12px">
+          <div class="room-label">INVITE LINK READY</div>
+          <p style="font-size:11px;color:var(--text-secondary);margin:8px 0">Share the link with peer.</p>
+          <button class="btn" onclick="fsCopyPrivateInvite()" style="margin:4px auto;font-size:10px">Copy Link</button>
+        </div>
+        <label style="margin-bottom:4px;display:block">Paste peer's connection code:</label>
+        <input type="text" class="sdp-input" id="fsPrivateAnswer" placeholder="Connection code...">
+        <button class="btn btn-primary" onclick="fsPrivateComplete()" style="width:100%;justify-content:center;margin-top:4px">Connect</button>
+      </div>
+    </div>
+
+    <!-- File Share: Quick Connect -->
+    <div id="fsQuickUI" style="display:none">
+      <div class="fs-room-controls">
+        <button class="btn btn-primary" id="fsCreateRoomBtn" onclick="fsQuickCreate()">Create Room</button>
+        <div class="toolbar-separator"></div>
+        <input type="text" id="fsJoinRoomInput" placeholder="Code" maxlength="6">
+        <input type="text" id="fsJoinPassInput" placeholder="Password">
+        <button class="btn" id="fsJoinRoomBtn" onclick="fsQuickJoin()">Join</button>
+      </div>
+      <div id="fsQuickRoomInfo" style="display:none">
+        <div class="room-display" style="margin-bottom:12px">
+          <div class="room-label">FILE SHARE ROOM</div>
+          <div class="room-code" id="fsRoomCode">------</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted)">Password: <span id="fsRoomPass">---</span></div>
+          <div style="margin-top:8px;display:flex;gap:6px;justify-content:center">
+            <button class="btn" onclick="fsCopyRoomInfo()" style="font-size:10px">Copy Info</button>
+            <button class="btn btn-danger" onclick="fsLeaveRoom()" style="font-size:10px">Leave</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="fsConnected" style="display:none">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <span style="font-size:11px;color:var(--accent);font-weight:600">Connected</span>
+        <span style="font-size:10px;color:var(--text-muted)" id="fsPeerName">-</span>
+      </div>
+      <div class="upload-zone" id="fsUploadZone">
+        <div class="icon">&#128230;</div>
+        <div class="title">Drop files to send</div>
+        <div class="subtitle">Or click to browse</div>
+      </div>
+      <input type="file" id="fsFileInput" style="display:none" multiple>
+      <div id="fsSendList" class="fs-file-list"></div>
+      <h4 style="font-size:12px;font-weight:600;color:var(--text-secondary);margin:16px 0 8px">Received Files</h4>
+      <div id="fsRecvList" class="fs-file-list"><p style="font-size:11px;color:var(--text-muted)">No files received yet.</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- Footer -->
+<div class="footer">
+  <div class="footer-stats"><div class="stat"><span class="stat-label">RX:</span><span class="stat-rx" id="rxCount">0 B</span></div><div class="stat"><span class="stat-label">TX:</span><span class="stat-tx" id="txCount">0 B</span></div><div class="stat"><span class="stat-label">Lines:</span><span id="lineCount">0</span></div></div>
+  <div id="portInfo">No port selected</div>
+</div>
+<script type="module">
+
+// =============================================
+// Trystero — lazy-loaded for Quick Connect mode
+// =============================================
+let trysteroMod = null;
+async function loadTrystero() {
+  if (!trysteroMod) {
+    trysteroMod = await import('https://esm.run/trystero/mqtt');
+  }
+  return trysteroMod;
+}
+
+// =============================================
+// State
+// =============================================
+let port = null, reader = null, writer = null, isConnected = false, readLoopActive = false;
+let showTimestamps = false, showHex = false, autoScroll = true;
+let rxBytes = 0, txBytes = 0, lineCounter = 0;
+let logBuffer = [], commandHistory = [], historyIndex = -1;
+let rxLineBuffer = '', dtrState = false, rtsState = false;
+let loadedFileContent = null, loadedFileName = null;
+let rxPromptBuffer = '', promptResolve = null;
+const transfer = { file: { active: false, paused: false, cancelled: false }, config: { active: false, paused: false, cancelled: false } };
+
+// P2P state
+let p2pMode = 'private'; // 'private' or 'quick'
+let isHost = false, isPeer = false;
+// Private mode
+let privatePC = null, privateDC = null, privateInviteLink = '', privateAuthKey = null;
+let privateAnswerPC = null, privateAnswerDC = null;
+// Quick connect mode
+let quickRoom = null, quickSendMsg = null, quickGetMsg = null;
+let quickRoomId = '', quickRoomPassword = '';
+// Shared P2P
+let hostConnections = new Map(); // peerId -> {pc, dc, name, ip, canWrite, sessionToken, joinedAt}
+let peerConnection = null; // for peer mode — the active connection
+let peerSessionKey = null, peerName = '', peerInviteToken = null;
+let approvedSessionKeys = new Map();
+let pendingConnections = []; // [{peerId, name, pc, dc}]
+let canWrite = false;
+let terminalHistory = '';
+
+// File share state
+let fsMode = 'private';
+let fsPC = null, fsDC = null, fsRoom = null;
+let fsSendAction = null, fsGetAction = null, fsProgressAction = null;
+let fsConnectedPeer = null;
+let fsInviteLink = '', fsAuthKey = null;
+
+// Settings
+let turnConfig = { url: '', user: '', cred: '', relayOnly: false };
+
+const $ = id => document.getElementById(id);
+if (!('serial' in navigator)) { $('unsupportedBanner').style.display = 'block'; $('connectBtn').disabled = true; }
+
+// =============================================
+// ICE Configuration
+// =============================================
+function getIceConfig() {
+  const servers = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' }
+  ];
+  if (turnConfig.url) {
+    servers.push({ urls: turnConfig.url, username: turnConfig.user, credential: turnConfig.cred });
+  }
+  const config = { iceServers: servers };
+  if (turnConfig.relayOnly && turnConfig.url) {
+    config.iceTransportPolicy = 'relay';
+  }
+  return config;
+}
+
+// =============================================
+// Crypto Helpers (Web Crypto API)
+// =============================================
+function randomBytes(n) { const a = new Uint8Array(n); crypto.getRandomValues(a); return a; }
+function toBase64Url(buf) { return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+function fromBase64Url(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return Uint8Array.from(atob(s), c => c.charCodeAt(0)); }
+
+async function aesEncrypt(plaintext, keyBytes) {
+  const iv = randomBytes(12);
+  const key = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(plaintext));
+  const combined = new Uint8Array(iv.length + ct.byteLength);
+  combined.set(iv); combined.set(new Uint8Array(ct), iv.length);
+  return toBase64Url(combined);
+}
+
+async function aesDecrypt(encoded, keyBytes) {
+  const data = fromBase64Url(encoded);
+  const iv = data.slice(0, 12);
+  const ct = data.slice(12);
+  const key = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['decrypt']);
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+  return new TextDecoder().decode(pt);
+}
+
+function generateHalf() { return toBase64Url(randomBytes(32)); }
+
+async function deriveSessionToken(half1, half2) {
+  const combined = new TextEncoder().encode(half1 + ':' + half2);
+  const hash = await crypto.subtle.digest('SHA-256', combined);
+  return toBase64Url(hash);
+}
+
+function generateRoomId() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let id = '';
+  const r = randomBytes(6);
+  for (let i = 0; i < 6; i++) id += chars[r[i] % chars.length];
+  return id;
+}
+
+function generatePassword() { return toBase64Url(randomBytes(12)); }
+
+// =============================================
+// UI Helpers
+// =============================================
+function escapeHTML(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function formatBytes(b) { return b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB'; }
+function showToast(msg, type) { const t = $('toast'); t.textContent = msg; t.className = `toast ${type} show`; setTimeout(() => t.classList.remove('show'), 2500); }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function switchMainTab(tab) {
+  document.querySelectorAll('.main-tab').forEach((t, i) => t.classList.toggle('active', (tab === 'console' && i === 0) || (tab === 'fileshare' && i === 1)));
+  $('view-console').classList.toggle('active', tab === 'console');
+  $('view-fileshare').classList.toggle('active', tab === 'fileshare');
+}
+
+function togglePanel(which) {
+  const panel = $('sidePanel');
+  if (panel.classList.contains('open') && !which) { panel.classList.remove('open'); return; }
+  panel.classList.add('open');
+  if (which === 'sharing') {
+    switchPanelTab('p2p');
+  }
+}
+
+function closePanel() { $('sidePanel').classList.remove('open'); }
+
+function switchPanelTab(tab) {
+  document.querySelectorAll('#panelTabs .panel-tab').forEach((t, i) => {
+    const tabs = ['file', 'config', 'p2p'];
+    t.classList.toggle('active', tabs[i] === tab);
+  });
+  ['file', 'config', 'p2p'].forEach(t => {
+    $('sptab-' + t).classList.toggle('active', t === tab);
+  });
+}
+
+function toggleSettings() { $('settingsOverlay').classList.toggle('visible'); }
+
+function saveSettings() {
+  turnConfig.url = $('turnUrl').value.trim();
+  turnConfig.user = $('turnUser').value.trim();
+  turnConfig.cred = $('turnCred').value.trim();
+  turnConfig.relayOnly = $('turnRelayOnly').checked;
+  try { localStorage.setItem('sc-turn', JSON.stringify(turnConfig)); } catch {}
+  toggleSettings();
+  showToast('Settings saved', 'success');
+}
+
+function loadSettings() {
+  try {
+    const s = localStorage.getItem('sc-turn');
+    if (s) {
+      const o = JSON.parse(s);
+      turnConfig = { ...turnConfig, ...o };
+      $('turnUrl').value = turnConfig.url;
+      $('turnUser').value = turnConfig.user;
+      $('turnCred').value = turnConfig.cred;
+      $('turnRelayOnly').checked = turnConfig.relayOnly;
     }
+  } catch {}
+}
 
-    function clearTerminal() {
-      terminal.innerHTML = '';
-      appendToTerminal('[Terminal cleared]\n', 'system-msg');
+// =============================================
+// Serial Connection
+// =============================================
+async function toggleConnection() { isConnected ? await disconnect() : await connect(); }
+
+async function connect() {
+  try {
+    port = await navigator.serial.requestPort();
+    const opts = { baudRate: parseInt($('baudRate').value), dataBits: parseInt($('dataBits').value), stopBits: parseInt($('stopBits').value), parity: $('parity').value, flowControl: $('flowControl').value };
+    await port.open(opts);
+    writer = port.writable.getWriter();
+    isConnected = true; updateUI(true);
+    const info = port.getInfo();
+    const vid = info.usbVendorId ? `VID:0x${info.usbVendorId.toString(16).toUpperCase()}` : '';
+    const pid = info.usbProductId ? `PID:0x${info.usbProductId.toString(16).toUpperCase()}` : '';
+    $('portInfo').textContent = [vid, pid].filter(Boolean).join(' ') || 'Connected';
+    appendLine(`Connected @ ${opts.baudRate} baud (${opts.dataBits}${opts.parity[0].toUpperCase()}${opts.stopBits}${opts.flowControl === 'hardware' ? ' HW-FC' : ''})`, 'sys');
+    showToast('Connected', 'success'); readLoop();
+  } catch (err) { if (err.name !== 'NotFoundError') { appendLine(`Error: ${err.message}`, 'err'); showToast('Connection failed', 'error'); } }
+}
+
+async function disconnect() {
+  try {
+    readLoopActive = false; cancelTransfer('file'); cancelTransfer('config');
+    if (reader) { await reader.cancel(); reader.releaseLock(); reader = null; }
+    if (writer) { writer.releaseLock(); writer = null; }
+    if (port) { await port.close(); port = null; }
+  } catch (e) { console.warn('Disconnect:', e); }
+  isConnected = false; updateUI(false); appendLine('Disconnected', 'sys');
+  $('portInfo').textContent = 'No port selected'; showToast('Disconnected', 'error');
+}
+
+async function readLoop() {
+  readLoopActive = true;
+  while (port?.readable && readLoopActive) {
+    try {
+      reader = port.readable.getReader();
+      while (true) { const { value, done } = await reader.read(); if (done || !readLoopActive) break; if (value) { rxBytes += value.length; updateStats(); processIncoming(value); } }
+      reader.releaseLock(); reader = null;
+    } catch (err) { if (readLoopActive) appendLine(`Read error: ${err.message}`, 'err'); try { reader?.releaseLock(); } catch {} reader = null; break; }
+  }
+  if (isConnected) { isConnected = false; updateUI(false); appendLine('Port lost', 'err'); }
+}
+
+function processIncoming(data) {
+  const rawText = new TextDecoder().decode(data);
+  // Broadcast to P2P peers
+  broadcastToHosts({ type: 'terminal', data: rawText });
+  rxPromptBuffer += rawText; if (rxPromptBuffer.length > 2000) rxPromptBuffer = rxPromptBuffer.slice(-1000);
+  if (promptResolve) { try { if (new RegExp(promptResolve.pattern).test(rxPromptBuffer)) { rxPromptBuffer = ''; promptResolve.resolve(); promptResolve = null; } } catch {} }
+  if (showHex) { appendLine(Array.from(data).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' '), 'rx'); return; }
+  rxLineBuffer += rawText; const lines = rxLineBuffer.split(/\r?\n/); rxLineBuffer = lines.pop();
+  for (const line of lines) appendLine(line, 'rx');
+}
+
+let flushTimer = null;
+const _processIncoming = processIncoming;
+processIncoming = function(d) { clearTimeout(flushTimer); _processIncoming(d); flushTimer = setTimeout(() => { if (rxLineBuffer) { appendLine(rxLineBuffer, 'rx'); rxLineBuffer = ''; } }, 200); };
+
+async function sendData() {
+  if (isPeer && peerConnection) {
+    // Send via P2P to host
+    const text = $('serialInput').value;
+    if (!canWrite) { showToast('View only', 'error'); return; }
+    sendToPeer({ type: 'command', data: text });
+    appendLine(text, 'tx');
+    if (text && (!commandHistory.length || commandHistory[commandHistory.length - 1] !== text)) { commandHistory.push(text); if (commandHistory.length > 300) commandHistory.shift(); }
+    historyIndex = -1; $('serialInput').value = '';
+    return;
+  }
+  if (!isConnected || !writer) return;
+  const text = $('serialInput').value;
+  const le = $('lineEnding').value.replace('\\r', '\r').replace('\\n', '\n');
+  try {
+    const enc = new TextEncoder().encode(text + le); await writer.write(enc); txBytes += enc.length; updateStats();
+    appendLine(text, 'tx');
+    if (text && (!commandHistory.length || commandHistory[commandHistory.length - 1] !== text)) { commandHistory.push(text); if (commandHistory.length > 300) commandHistory.shift(); }
+    historyIndex = -1; $('serialInput').value = '';
+  } catch (err) { appendLine(`Send error: ${err.message}`, 'err'); }
+}
+
+// =============================================
+// Terminal
+// =============================================
+const terminal = $('terminal');
+function appendLine(text, type) {
+  const w = terminal.querySelector('.welcome-message'); if (w) w.remove();
+  const span = document.createElement('span'); let c = '';
+  if (showTimestamps) { const n = new Date(); c += `<span class="line-timestamp">[${n.toTimeString().split(' ')[0]}.${String(n.getMilliseconds()).padStart(3, '0')}] </span>`; }
+  c += ({ rx: '\u25C0 ', tx: '\u25B6 ', sys: '\u25CF ', err: '\u2716 ', file: '\uD83D\uDCC4 ' }[type] || '') + escapeHTML(text);
+  span.innerHTML = c; span.className = `line-${type}`;
+  terminal.appendChild(span); terminal.appendChild(document.createTextNode('\n'));
+  lineCounter++; $('lineCount').textContent = lineCounter;
+  logBuffer.push({ time: new Date().toISOString(), type, text });
+  terminalHistory += `[${type}] ${text}\n`;
+  while (terminal.childNodes.length > 10000) { terminal.removeChild(terminal.firstChild); terminal.removeChild(terminal.firstChild); }
+  if (autoScroll) terminal.scrollTop = terminal.scrollHeight;
+}
+
+function clearTerminal() { terminal.innerHTML = ''; lineCounter = 0; rxBytes = 0; txBytes = 0; logBuffer = []; terminalHistory = ''; $('lineCount').textContent = '0'; updateStats(); }
+function downloadLog() { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([logBuffer.map(e => `${e.time} [${e.type.toUpperCase()}] ${e.text}`).join('\n')], { type: 'text/plain' })); a.download = `serial-log-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`; a.click(); URL.revokeObjectURL(a.href); showToast('Log saved', 'success'); }
+
+function toggleTimestamps() { showTimestamps = !showTimestamps; $('timestampToggle').classList.toggle('active', showTimestamps); }
+function toggleHex() { showHex = !showHex; $('hexToggle').classList.toggle('active', showHex); }
+function toggleAutoscroll() { autoScroll = !autoScroll; $('autoscrollToggle').classList.toggle('active', autoScroll); }
+
+async function toggleSignal(sig) {
+  if (!port) return;
+  try {
+    if (sig === 'dtr') { dtrState = !dtrState; await port.setSignals({ dataTerminalReady: dtrState }); $('dtrBtn').style.cssText = dtrState ? 'background:var(--accent-glow);color:var(--accent);border-color:rgba(0,230,118,0.3)' : ''; }
+    else { rtsState = !rtsState; await port.setSignals({ requestToSend: rtsState }); $('rtsBtn').style.cssText = rtsState ? 'background:var(--accent-glow);color:var(--accent);border-color:rgba(0,230,118,0.3)' : ''; }
+  } catch (err) { appendLine(`Signal error: ${err.message}`, 'err'); }
+}
+
+function updateUI(connected) {
+  $('connectBtn').innerHTML = connected ? '<span>\u23FC</span> Disconnect' : '<span>\u23FB</span> Connect';
+  $('connectBtn').className = connected ? 'btn btn-danger' : 'btn btn-primary';
+  $('statusBadge').className = `status-badge ${connected ? 'connected' : 'disconnected'}`;
+  $('statusText').textContent = connected ? 'Connected' : 'Disconnected';
+  $('serialInput').disabled = !connected && !isPeer;
+  $('sendBtn').disabled = !connected && !isPeer;
+  $('dtrBtn').disabled = !connected; $('rtsBtn').disabled = !connected;
+  $('transferBtn').disabled = !connected; $('shareBtn').disabled = !connected && !isPeer;
+  ['baudRate', 'dataBits', 'stopBits', 'parity', 'flowControl'].forEach(id => $(id).disabled = connected);
+  if (connected) $('serialInput').focus();
+}
+function updateStats() { $('rxCount').textContent = formatBytes(rxBytes); $('txCount').textContent = formatBytes(txBytes); }
+
+// =============================================
+// Config-to-serial Transfer
+// =============================================
+const uploadZone = $('uploadZone'), fileInput = $('fileInput');
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classList.remove('dragover'); if (e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', () => { if (fileInput.files.length) loadFile(fileInput.files[0]); });
+
+function loadFile(file) {
+  loadedFileName = file.name; const r = new FileReader();
+  r.onload = () => {
+    loadedFileContent = r.result; const lines = loadedFileContent.split(/\r?\n/);
+    $('fileName').textContent = file.name; $('fileSize').textContent = formatBytes(file.size); $('fileLines').textContent = lines.length;
+    $('filePreview').textContent = lines.slice(0, 20).join('\n') + (lines.length > 20 ? `\n... (${lines.length - 20} more)` : '');
+    $('fileDetails').style.display = 'block';
+    showToast(`Loaded ${file.name}`, 'info');
+  }; r.readAsText(file);
+}
+
+async function sendLines(lines, opts) {
+  const { mode, lineDelay, charDelay, lineEnding, echoLocal, waitPrompt, promptPattern } = opts;
+  const t = transfer[mode]; t.active = true; t.paused = false; t.cancelled = false;
+  $(`${mode}Progress`).classList.add('active'); $(`${mode}SendBtn`).disabled = true;
+  $(`${mode}PauseBtn`).textContent = 'Pause'; $(`${mode}ProgressBar`).className = 'progress-bar-fill';
+  $(`${mode}ProgressLabel`).textContent = 'Sending...';
+  const le = lineEnding.replace('\\r', '\r').replace('\\n', '\n');
+  appendLine(`-- Transfer start (${lines.length} lines) --`, 'file');
+  const startTime = Date.now(); let bytesSent = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (t.cancelled) break; while (t.paused && !t.cancelled) await sleep(100); if (t.cancelled) break;
+    const payload = lines[i] + le; const encoded = new TextEncoder().encode(payload);
+    try {
+      if (charDelay > 0) { for (let c = 0; c < encoded.length; c++) { if (t.cancelled) break; while (t.paused && !t.cancelled) await sleep(50); await writer.write(new Uint8Array([encoded[c]])); if (c < encoded.length - 1) await sleep(charDelay); } }
+      else { await writer.write(encoded); }
+      bytesSent += encoded.length; txBytes += encoded.length; updateStats();
+      if (echoLocal) appendLine(lines[i], 'tx');
+      if (waitPrompt && i < lines.length - 1) { rxPromptBuffer = ''; if (await waitForPrompt(promptPattern, 10000) === 'timeout') appendLine(`Prompt timeout line ${i + 1}`, 'err'); }
+      const pct = ((i + 1) / lines.length * 100).toFixed(1);
+      $(`${mode}ProgressBar`).style.width = pct + '%'; $(`${mode}ProgressPct`).textContent = pct + '%';
+      $(`${mode}ProgressLines`).textContent = `${i + 1}/${lines.length} lines`;
+      $(`${mode}ProgressBytes`).textContent = formatBytes(bytesSent);
+      const elapsed = (Date.now() - startTime) / 1000, rate = (i + 1) / elapsed;
+      $(`${mode}ProgressEta`).textContent = `ETA: ${Math.ceil((lines.length - i - 1) / rate)}s`;
+    } catch (err) { appendLine(`Error line ${i + 1}: ${err.message}`, 'err'); $(`${mode}ProgressBar`).classList.add('error'); break; }
+    if (lineDelay > 0 && i < lines.length - 1) await sleep(lineDelay);
+  }
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1); const status = t.cancelled ? 'cancelled' : 'complete';
+  appendLine(`-- Transfer ${status}: ${formatBytes(bytesSent)} in ${elapsed}s --`, 'file');
+  showToast(`Transfer ${status}`, t.cancelled ? 'error' : 'success'); t.active = false; $(`${mode}SendBtn`).disabled = false;
+  if (!t.cancelled) { $(`${mode}ProgressLabel`).textContent = 'Complete!'; $(`${mode}ProgressBar`).style.width = '100%'; $(`${mode}ProgressPct`).textContent = '100%'; }
+}
+
+function startFileTransfer() {
+  if (!isConnected || !writer || !loadedFileContent || transfer.file.active) return;
+  let lines = loadedFileContent.split(/\r?\n/);
+  if ($('fileSkipEmpty').checked) lines = lines.filter(l => l.trim());
+  if ($('fileSkipComments').checked) lines = lines.filter(l => !l.trim().match(/^[#!]/));
+  const leVal = $('fileLineEndingOverride').value;
+  const le = leVal === 'auto' ? (loadedFileContent.includes('\r\n') ? '\r\n' : loadedFileContent.includes('\r') ? '\r' : '\n') : leVal;
+  sendLines(lines, { mode: 'file', lineDelay: parseInt($('fileLineDelay').value) || 0, charDelay: parseInt($('fileCharDelay').value) || 0, lineEnding: le, echoLocal: $('fileEchoLocal').checked, waitPrompt: $('fileWaitPrompt').checked, promptPattern: $('filePromptPattern').value });
+}
+
+function startConfigTransfer() {
+  if (!isConnected || !writer || transfer.config.active) return;
+  const text = $('configText').value; if (!text.trim()) { showToast('No config to send', 'error'); return; }
+  let lines = text.split('\n');
+  if ($('configSkipEmpty').checked) lines = lines.filter(l => l.trim());
+  if ($('configSkipComments').checked) lines = lines.filter(l => !l.trim().match(/^[#!]/));
+  sendLines(lines, { mode: 'config', lineDelay: parseInt($('configLineDelay').value) || 0, charDelay: parseInt($('configCharDelay').value) || 0, lineEnding: $('configLineEndingSend').value, echoLocal: $('configEchoLocal').checked, waitPrompt: $('configWaitPrompt').checked, promptPattern: $('configPromptPattern').value });
+}
+
+function pauseTransfer(mode) { const t = transfer[mode]; if (!t.active) return; t.paused = !t.paused; $(`${mode}PauseBtn`).textContent = t.paused ? 'Resume' : 'Pause'; $(`${mode}ProgressBar`).classList.toggle('paused', t.paused); $(`${mode}ProgressLabel`).textContent = t.paused ? 'Paused' : 'Sending...'; appendLine(t.paused ? '-- Paused --' : '-- Resumed --', 'file'); }
+function cancelTransfer(mode) { const t = transfer[mode]; if (!t.active) return; t.cancelled = true; t.paused = false; $(`${mode}ProgressLabel`).textContent = 'Cancelled'; $(`${mode}ProgressBar`).classList.add('error'); }
+
+function waitForPrompt(pattern, timeoutMs) {
+  return new Promise(resolve => {
+    try { if (new RegExp(pattern).test(rxPromptBuffer)) { rxPromptBuffer = ''; resolve('matched'); return; } } catch {}
+    const timer = setTimeout(() => { promptResolve = null; resolve('timeout'); }, timeoutMs);
+    promptResolve = { pattern, resolve: () => { clearTimeout(timer); resolve('matched'); } };
+  });
+}
+
+$('fileWaitPrompt').addEventListener('change', () => $('promptPatternRow').style.display = $('fileWaitPrompt').checked ? 'flex' : 'none');
+$('configWaitPrompt').addEventListener('change', () => $('configPromptPatternRow').style.display = $('configWaitPrompt').checked ? 'flex' : 'none');
+$('configText').addEventListener('input', () => { const t = $('configText').value; $('configChars').textContent = t.length; $('configLines').textContent = t ? t.split('\n').length : 0; });
+
+// =============================================
+// P2P Shared Helpers
+// =============================================
+function broadcastToHosts(msg) {
+  if (!isHost) return;
+  // Private mode: send over data channel
+  if (privateDC && privateDC.readyState === 'open') {
+    privateDC.send(JSON.stringify(msg));
+  }
+  // Quick mode: send via Trystero action
+  if (quickSendMsg) {
+    for (const [pid, info] of hostConnections) {
+      if (info.approved) quickSendMsg(msg, pid);
     }
-
-    function toggleHelp() {
-      const overlay = document.getElementById('helpOverlay');
-      overlay.classList.toggle('visible');
+  }
+  // Also direct DC connections from private mode peers
+  for (const [pid, info] of hostConnections) {
+    if (info.dc && info.dc.readyState === 'open' && info.approved) {
+      try { info.dc.send(JSON.stringify(msg)); } catch {}
     }
+  }
+}
 
-    // Close help on Escape
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        const overlay = document.getElementById('helpOverlay');
-        if (overlay.classList.contains('visible')) {
-          overlay.classList.remove('visible');
-          e.preventDefault();
-        }
-      }
-    });
+function sendToPeer(msg) {
+  // Peer sends to host
+  if (privateAnswerDC && privateAnswerDC.readyState === 'open') {
+    privateAnswerDC.send(JSON.stringify(msg));
+  }
+  if (quickSendMsg && peerConnection) {
+    quickSendMsg(msg, peerConnection);
+  }
+}
 
-    function updateStatus(connected, info) {
-      isConnected = connected;
-      statusDot.className = 'status-indicator' + (connected ? ' connected' : '');
-      statusText.textContent = connected ? 'Connected' : 'Disconnected';
-      portInfo.textContent = info || 'No port selected';
-      connectBtn.innerHTML = connected ? '&#9632; Disconnect' : '&#9654; Connect';
-      connectBtn.className = connected ? 'disconnect' : 'connect';
-      sendInputEl.disabled = !connected;
-      sendBtn.disabled = !connected;
-      if (connected) sendInputEl.focus();
-    }
-
-    async function toggleConnection() {
-      if (isConnected) {
-        await disconnect();
+function handleHostMessage(msg, peerId) {
+  if (!msg || !msg.type) return;
+  switch (msg.type) {
+    case 'identify': {
+      const info = hostConnections.get(peerId);
+      if (!info) break;
+      info.name = (msg.name || '').substring(0, 20);
+      // Check session token for auto-approve
+      if (msg.sessionToken && approvedSessionKeys.has(msg.sessionToken)) {
+        info.approved = true; info.sessionToken = msg.sessionToken; info.canWrite = $('allowRemoteInput').checked;
+        sendToHostPeer(peerId, { type: 'accepted' });
+        sendToHostPeer(peerId, { type: 'permission', canWrite: info.canWrite });
+        sendToHostPeer(peerId, { type: 'history', data: terminalHistory });
+        initiateSessionExchange(peerId);
+        appendLine(`[P2P] ${info.name || peerId} reconnected (session token).`, 'sys');
       } else {
-        await connect();
+        // Add to pending
+        pendingConnections.push({ peerId, name: info.name });
+        sendToHostPeer(peerId, { type: 'pending', message: 'Waiting for host approval...' });
+        renderPending();
+        appendLine(`[P2P] ${info.name || peerId} requests to join.`, 'sys');
       }
+      updatePeerListUI();
+      break;
     }
-
-    async function connect() {
-      if (!('serial' in navigator)) {
-        appendToTerminal('[Error] Web Serial API not supported. Use Chrome or Edge 89+.\n', 'error-msg');
-        return;
-      }
-
-      try {
-        port = await navigator.serial.requestPort();
-        const baudRate = parseInt(document.getElementById('baudRate').value);
-        const dataBits = parseInt(document.getElementById('dataBits').value);
-        const stopBits = parseInt(document.getElementById('stopBits').value);
-        const parity = document.getElementById('parity').value;
-        const flowControl = document.getElementById('flowControl').value;
-
-        await port.open({ baudRate, dataBits, stopBits, parity, flowControl });
-
-        const info = port.getInfo();
-        const vendorId = info.usbVendorId ? `VID:0x${info.usbVendorId.toString(16).toUpperCase()}` : '';
-        const productId = info.usbProductId ? `PID:0x${info.usbProductId.toString(16).toUpperCase()}` : '';
-        const portDesc = [vendorId, productId].filter(Boolean).join(' ') || 'Serial Port';
-
-        updateStatus(true, `${portDesc} @ ${baudRate} baud`);
-        appendToTerminal(`[Connected] ${portDesc} | ${baudRate} ${dataBits}${parity[0].toUpperCase()}${stopBits} | Flow: ${flowControl}\n`, 'system-msg');
-
-        keepReading = true;
-        readLoop();
-
-      } catch (err) {
-        if (err.name === 'NotFoundError') {
-          appendToTerminal('[Info] No port selected.\n', 'system-msg');
-        } else {
-          appendToTerminal(`[Error] ${err.message}\n`, 'error-msg');
+    case 'session-exchange': {
+      if (msg.peerHalf) {
+        const info = hostConnections.get(peerId);
+        if (info && info._hostHalf) {
+          deriveSessionToken(info._hostHalf, msg.peerHalf).then(token => {
+            info.sessionToken = token; delete info._hostHalf;
+            approvedSessionKeys.set(token, { name: info.name, approvedAt: Date.now() });
+          });
         }
       }
+      break;
     }
+    case 'command': {
+      const info = hostConnections.get(peerId);
+      if (info && info.canWrite && isConnected && writer) {
+        const text = msg.data;
+        const le = $('lineEnding').value.replace('\\r', '\r').replace('\\n', '\n');
+        const enc = new TextEncoder().encode(text + le);
+        writer.write(enc).then(() => { txBytes += enc.length; updateStats(); });
+        appendLine(`[${info.name || 'peer'}] ${text}`, 'tx');
+      }
+      break;
+    }
+  }
+}
 
-    async function readLoop() {
-      const decoder = new TextDecoderStream();
-      const readableStreamClosed = port.readable.pipeTo(decoder.writable);
-      reader = decoder.readable.getReader();
-
-      try {
-        while (keepReading) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          if (value) {
-            rxBytes += new Blob([value]).size;
-            rxCountEl.textContent = rxBytes;
-            appendToTerminal(value);
-          }
+function handlePeerMessage(msg) {
+  if (!msg || !msg.type) return;
+  switch (msg.type) {
+    case 'pending':
+      appendLine(`[P2P] ${msg.message || 'Waiting...'}`, 'sys');
+      break;
+    case 'accepted':
+      isPeer = true; canWrite = false;
+      $('peerViewArea').style.display = 'block';
+      $('serialInput').disabled = false; $('sendBtn').disabled = false;
+      $('shareBtn').disabled = false;
+      appendLine('[P2P] Host accepted your connection!', 'sys');
+      showToast('Connected to host', 'success');
+      break;
+    case 'rejected':
+      appendLine(`[P2P] ${msg.message || 'Connection rejected.'}`, 'err');
+      showToast('Rejected', 'error');
+      cleanupPeerState();
+      break;
+    case 'kicked':
+      appendLine(`[P2P] ${msg.message || 'Kicked by host.'}`, 'err');
+      showToast('Kicked', 'error');
+      peerSessionKey = null;
+      cleanupPeerState();
+      break;
+    case 'terminal':
+      // Display raw text from host (already processed into terminal format)
+      if (showHex) {
+        // In hex mode on peer side, just show the text
+        const lines = msg.data.split(/\r?\n/);
+        for (const line of lines) if (line) appendLine(line, 'rx');
+      } else {
+        const lines = msg.data.split(/\r?\n/);
+        for (const line of lines) if (line) appendLine(line, 'rx');
+      }
+      break;
+    case 'history':
+      terminal.innerHTML = '';
+      if (msg.data) {
+        const lines = msg.data.split('\n').filter(l => l);
+        for (const line of lines) {
+          const m = line.match(/^\[(\w+)\] (.*)/);
+          if (m) appendLine(m[2], m[1]); else appendLine(line, 'sys');
         }
-      } catch (err) {
-        if (keepReading) {
-          appendToTerminal(`\n[Error] Read failed: ${err.message}\n`, 'error-msg');
-        }
-      } finally {
-        reader.releaseLock();
-        try { await readableStreamClosed; } catch {}
       }
-    }
-
-    async function disconnect() {
-      keepReading = false;
-      try {
-        if (reader) {
-          await reader.cancel();
-          reader = null;
-        }
-        if (port) {
-          await port.close();
-          port = null;
-        }
-      } catch (err) {
-        appendToTerminal(`[Error] Disconnect: ${err.message}\n`, 'error-msg');
+      break;
+    case 'status':
+      if (msg.connected !== undefined) {
+        $('peerViewStatus').textContent = msg.connected ? 'HOST CONNECTED' : 'HOST DISCONNECTED';
       }
-      updateStatus(false);
-      appendToTerminal('[Disconnected]\n', 'system-msg');
-    }
-
-    async function sendData(text) {
-      if (!port || !port.writable) return;
-      const encoder = new TextEncoder();
-      const writer = port.writable.getWriter();
-      try {
-        const data = encoder.encode(text);
-        await writer.write(data);
-        txBytes += data.length;
-        txCountEl.textContent = txBytes;
-        if (document.getElementById('echoLocal').checked) {
-          appendToTerminal(text, 'sent-msg');
-        }
-      } finally {
-        writer.releaseLock();
+      break;
+    case 'permission':
+      canWrite = msg.canWrite;
+      $('peerViewPermission').textContent = canWrite ? 'Read/Write' : 'View Only';
+      $('serialInput').placeholder = canWrite ? 'Type command...' : 'View only';
+      break;
+    case 'session-exchange':
+      if (msg.hostHalf) {
+        const myHalf = generateHalf();
+        sendToPeer({ type: 'session-exchange', peerHalf: myHalf });
+        deriveSessionToken(msg.hostHalf, myHalf).then(token => {
+          peerSessionKey = token;
+          try { sessionStorage.setItem('sc-session', JSON.stringify({ token, role: 'peer' })); } catch {}
+        });
       }
-    }
+      break;
+  }
+}
 
-    function handleSend() {
-      const text = sendInputEl.value;
-      if (!text && !document.getElementById('lineEnding').value) return;
+function sendToHostPeer(peerId, msg) {
+  const info = hostConnections.get(peerId);
+  if (info && info.dc && info.dc.readyState === 'open') {
+    info.dc.send(JSON.stringify(msg));
+  }
+  if (quickSendMsg) {
+    quickSendMsg(msg, peerId);
+  }
+}
 
-      const lineEnding = document.getElementById('lineEnding').value
-        .replace('\\r', '\r')
-        .replace('\\n', '\n');
+function initiateSessionExchange(peerId) {
+  const half = generateHalf();
+  const info = hostConnections.get(peerId);
+  if (info) info._hostHalf = half;
+  sendToHostPeer(peerId, { type: 'session-exchange', hostHalf: half });
+}
 
-      sendData(text + lineEnding);
-      sendInputEl.value = '';
-      sendInputEl.focus();
-    }
+function acceptPending(idx) {
+  const p = pendingConnections[idx];
+  if (!p) return;
+  pendingConnections.splice(idx, 1);
+  const info = hostConnections.get(p.peerId);
+  if (info) {
+    info.approved = true; info.canWrite = $('allowRemoteInput').checked;
+    sendToHostPeer(p.peerId, { type: 'accepted' });
+    sendToHostPeer(p.peerId, { type: 'permission', canWrite: info.canWrite });
+    sendToHostPeer(p.peerId, { type: 'history', data: terminalHistory });
+    initiateSessionExchange(p.peerId);
+    appendLine(`[P2P] ${info.name || p.peerId} accepted.`, 'sys');
+  }
+  renderPending(); updatePeerListUI();
+}
 
-    // Keyboard handling
-    sendInputEl.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        handleSend();
-      }
-    });
+function rejectPending(idx) {
+  const p = pendingConnections[idx];
+  if (!p) return;
+  sendToHostPeer(p.peerId, { type: 'rejected', message: 'Connection rejected by host.' });
+  const info = hostConnections.get(p.peerId);
+  if (info && info.dc) { setTimeout(() => { try { info.dc.close(); } catch {} }, 500); }
+  hostConnections.delete(p.peerId);
+  pendingConnections.splice(idx, 1);
+  renderPending(); updatePeerListUI();
+  appendLine(`[P2P] ${p.name || p.peerId} rejected.`, 'sys');
+}
 
-    // Direct keyboard input to terminal when focused
-    terminal.addEventListener('keydown', (e) => {
-      if (!isConnected) return;
-      if (e.ctrlKey || e.altKey || e.metaKey) return;
-      if (e.key.length === 1) {
-        sendData(e.key);
-        e.preventDefault();
-      } else if (e.key === 'Enter') {
-        const lineEnding = document.getElementById('lineEnding').value
-          .replace('\\r', '\r')
-          .replace('\\n', '\n');
-        sendData(lineEnding);
-        e.preventDefault();
-      } else if (e.key === 'Backspace') {
-        sendData('\b');
-        e.preventDefault();
-      }
-    });
+function kickPeer(peerId) {
+  sendToHostPeer(peerId, { type: 'kicked', message: 'Disconnected by host.' });
+  const info = hostConnections.get(peerId);
+  if (info && info.sessionToken) approvedSessionKeys.delete(info.sessionToken);
+  setTimeout(() => {
+    if (info && info.dc) { try { info.dc.close(); } catch {} }
+    if (info && info.pc) { try { info.pc.close(); } catch {} }
+    hostConnections.delete(peerId);
+    updatePeerListUI();
+  }, 500);
+  appendLine(`[P2P] Kicked ${info?.name || peerId}.`, 'sys');
+}
 
-    // Handle port disconnect events
-    navigator.serial?.addEventListener('disconnect', (e) => {
-      if (port && e.target === port) {
-        keepReading = false;
-        updateStatus(false);
-        appendToTerminal('\n[Port disconnected]\n', 'error-msg');
-      }
-    });
+function togglePeerWrite(peerId) {
+  const info = hostConnections.get(peerId);
+  if (!info) return;
+  info.canWrite = !info.canWrite;
+  sendToHostPeer(peerId, { type: 'permission', canWrite: info.canWrite });
+  updatePeerListUI();
+}
 
-    // =============================================
-    // WebRTC P2P Remote Sharing (PeerJS)
-    // =============================================
+function renderPending() {
+  const area = $('pendingArea');
+  if (!pendingConnections.length) { area.style.display = 'none'; area.innerHTML = ''; return; }
+  area.style.display = 'block';
+  area.innerHTML = pendingConnections.map((p, i) =>
+    `<div class="pending-banner"><span class="pending-text">${escapeHTML(p.name || p.peerId)} wants to join</span><div><button class="btn btn-primary" onclick="acceptPending(${i})" style="font-size:10px;padding:3px 8px">Accept</button> <button class="btn btn-danger" onclick="rejectPending(${i})" style="font-size:10px;padding:3px 8px">Reject</button></div></div>`
+  ).join('');
+}
 
-    // HTML-escape to prevent XSS in innerHTML contexts (peer names, etc.)
-    function escapeHtml(str) {
-      const div = document.createElement('div');
-      div.textContent = str;
-      return div.innerHTML;
-    }
+function updatePeerListUI() {
+  const approved = [...hostConnections.entries()].filter(([, v]) => v.approved);
+  $('peerCount').textContent = approved.length;
+  if (approved.length || isHost) { $('peerListArea').style.display = 'block'; } else { $('peerListArea').style.display = 'none'; }
+  $('peerList').innerHTML = approved.map(([pid, info]) =>
+    `<div class="peer-item"><div><span class="peer-name">${escapeHTML(info.name || pid.substring(0, 8))}</span><div class="peer-info-text">${info.canWrite ? 'R/W' : 'View'}</div></div><div class="peer-actions"><button class="btn" onclick="togglePeerWrite('${pid}')" style="font-size:9px;padding:2px 6px">${info.canWrite ? 'Revoke Write' : 'Grant Write'}</button><button class="btn btn-danger" onclick="kickPeer('${pid}')" style="font-size:9px;padding:2px 6px">Kick</button></div></div>`
+  ).join('');
+}
 
-    const PEER_CONFIG = {
-      debug: 1,
-      config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:stun3.l.google.com:19302' },
-          { urls: 'stun:stun4.l.google.com:19302' }
-        ],
-        // Expose real local IPs instead of mDNS (.local) hostnames
-        // Critical for cross-VLAN / same-network connections
-        sdpSemantics: 'unified-plan'
-      }
+function cleanupPeerState() {
+  isPeer = false; canWrite = false; peerConnection = null;
+  $('peerViewArea').style.display = 'none';
+  $('serialInput').disabled = !isConnected; $('sendBtn').disabled = !isConnected;
+}
+
+$('allowRemoteInput').addEventListener('change', () => {
+  const allow = $('allowRemoteInput').checked;
+  for (const [pid, info] of hostConnections) {
+    if (info.approved) { info.canWrite = allow; sendToHostPeer(pid, { type: 'permission', canWrite: allow }); }
+  }
+  updatePeerListUI();
+});
+
+// =============================================
+// Private Mode P2P
+// =============================================
+function setP2PMode(mode) {
+  p2pMode = mode;
+  document.querySelectorAll('#sptab-p2p .p2p-mode-btn').forEach((b, i) => b.classList.toggle('active', (mode === 'private' && i === 0) || (mode === 'quick' && i === 1)));
+  $('p2pPrivateUI').style.display = mode === 'private' ? 'block' : 'none';
+  $('p2pQuickUI').style.display = mode === 'quick' ? 'block' : 'none';
+}
+
+async function privateStartHost() {
+  if (isHost || isPeer) return;
+  try {
+    privateAuthKey = randomBytes(32);
+    privatePC = new RTCPeerConnection(getIceConfig());
+    privateDC = privatePC.createDataChannel('serial', { ordered: true });
+
+    privateDC.onopen = () => {
+      appendLine('[P2P Private] Data channel open.', 'sys');
+    };
+    privateDC.onmessage = (e) => {
+      try { handleHostMessage(JSON.parse(e.data), 'private-peer'); } catch {}
+    };
+    privateDC.onclose = () => {
+      hostConnections.delete('private-peer');
+      updatePeerListUI();
+      appendLine('[P2P Private] Peer disconnected.', 'sys');
     };
 
-    // Detect if we're likely on the same local network as the peer
-    // by comparing the first 3 octets of gathered host candidates
-    let localIPs = [];
+    // Register as host connection
+    hostConnections.set('private-peer', { pc: privatePC, dc: privateDC, name: '', canWrite: false, approved: false, joinedAt: Date.now() });
 
-    async function gatherLocalIPs() {
-      try {
-        const pc = new RTCPeerConnection({ iceServers: [] });
-        pc.createDataChannel('');
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
+    const offer = await privatePC.createOffer();
+    await privatePC.setLocalDescription(offer);
 
-        return new Promise((resolve) => {
-          const ips = [];
-          const timeout = setTimeout(() => { pc.close(); resolve(ips); }, 3000);
-          pc.onicecandidate = (e) => {
-            if (!e.candidate) { clearTimeout(timeout); pc.close(); resolve(ips); return; }
-            const match = e.candidate.candidate.match(/(\d+\.\d+\.\d+\.\d+)/);
-            if (match && !match[1].startsWith('0.')) ips.push(match[1]);
-          };
-        });
-      } catch { return []; }
-    }
-
-    gatherLocalIPs().then(ips => {
-      localIPs = ips;
-      if (ips.length > 0) {
-        console.log('[ICE] Local IPs discovered:', ips);
-      }
+    // Wait for ICE gathering
+    await new Promise((resolve) => {
+      if (privatePC.iceGatheringState === 'complete') { resolve(); return; }
+      privatePC.onicecandidate = (e) => { if (!e.candidate) resolve(); };
+      setTimeout(resolve, 5000); // Timeout after 5s
     });
 
-    let peer = null;               // PeerJS instance
-    let hostConnections = [];      // Host: array of DataConnections to peers
-    let peerInfoMap = new Map();   // Map<DataConnection, {id, ip, connectedAt, candidates}>
-    let pendingConnections = [];   // Host: connections awaiting approval {conn, id, name, ip}
-    let approvedSessionKeys = new Map(); // Host: sessionToken -> {name, approvedAt}
-    let inviteTokens = new Map();        // Host: token -> {createdAt, used}
-    let peerSessionKey = null;     // Peer: session key received from host
-    let peerInviteToken = null;    // Peer: one-time invite token from URL
-    let peerConnection = null;     // Peer: DataConnection to host
-    let isHost = false;
-    let isPeer = false;
-    let terminalHistory = '';      // Buffer of all terminal output for new peers
-    let canWrite = false;          // Peer: whether host allows input
-    let peerName = '';             // Peer: friendly display name
-    let reconnectAttempts = 0;
-    let reconnectTimer = null;
-    let currentRoomId = null;      // Track active room ID for reconnect
-    const MAX_RECONNECT = 10;
-    const BASE_DELAY = 1000;       // 1s base, doubles each attempt (max ~17 min)
-
-    // =============================================
-    // Session Persistence (sessionStorage)
-    // =============================================
-
-    function saveSession() {
-      try {
-        const data = {
-          role: isHost ? 'host' : (isPeer ? 'peer' : null),
-          roomId: currentRoomId,
-          terminalHistory: terminalHistory.slice(-50000), // cap at 50KB for storage
-          allowInput: isHost ? document.getElementById('allowRemoteInput').checked : canWrite,
-          peerName: peerName || '',
-          sessionToken: peerSessionKey || '',
-          timestamp: Date.now()
-        };
-        // Host: persist approved session tokens so peers can reconnect after host refresh
-        if (isHost && approvedSessionKeys.size > 0) {
-          data.approvedSessionKeys = Array.from(approvedSessionKeys.entries());
-        }
-        // Host: persist unused invite tokens
-        if (isHost && inviteTokens.size > 0) {
-          data.inviteTokens = Array.from(inviteTokens.entries()).filter(([, v]) => !v.used);
-        }
-        sessionStorage.setItem('sc_session', JSON.stringify(data));
-      } catch {}
-    }
-
-    function loadSession() {
-      try {
-        const raw = sessionStorage.getItem('sc_session');
-        if (!raw) return null;
-        const session = JSON.parse(raw);
-        // Expire after 30 minutes
-        if (Date.now() - session.timestamp > 30 * 60 * 1000) {
-          sessionStorage.removeItem('sc_session');
-          return null;
-        }
-        return session;
-      } catch { return null; }
-    }
-
-    function clearSession() {
-      try { sessionStorage.removeItem('sc_session'); } catch {}
-    }
-
-    // Auto-save session state periodically
-    setInterval(() => {
-      if (isHost || isPeer) saveSession();
-    }, 5000);
-
-    // Save before unload (refresh/close)
-    window.addEventListener('beforeunload', () => {
-      if (isHost || isPeer) saveSession();
-    });
-
-    // =============================================
-    // Reconnect Logic
-    // =============================================
-
-    function getReconnectDelay() {
-      return Math.min(BASE_DELAY * Math.pow(2, reconnectAttempts), 30000);
-    }
-
-    function scheduleReconnect(role, roomId) {
-      if (reconnectAttempts >= MAX_RECONNECT) {
-        appendToTerminal(`[Remote] Max reconnect attempts reached. Click Share/Join to reconnect manually.\n`, 'error-msg');
-        clearSession();
-        return;
-      }
-      const delay = getReconnectDelay();
-      reconnectAttempts++;
-      appendToTerminal(`[Remote] Reconnecting in ${(delay / 1000).toFixed(0)}s (attempt ${reconnectAttempts}/${MAX_RECONNECT})...\n`, 'remote-msg');
-
-      reconnectTimer = setTimeout(() => {
-        if (role === 'host') {
-          reconnectHost(roomId);
-        } else {
-          reconnectPeer(roomId);
-        }
-      }, delay);
-    }
-
-    function cancelReconnect() {
-      if (reconnectTimer) {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = null;
-      }
-      reconnectAttempts = 0;
-    }
-
-    function reconnectHost(roomId) {
-      if (isHost) return; // already reconnected
-      const peerId = 'serial-console-' + roomId;
-      appendToTerminal(`[Remote] Re-establishing host session ${roomId}...\n`, 'remote-msg');
-
-      // Destroy old peer if exists
-      if (peer) { try { peer.destroy(); } catch {} }
-
-      peer = new Peer(peerId, PEER_CONFIG);
-
-      peer.on('open', () => {
-        isHost = true;
-        currentRoomId = roomId;
-        reconnectAttempts = 0;
-        document.getElementById('shareBtn').disabled = true;
-        document.getElementById('roomIdDisplay').textContent = roomId;
-        document.getElementById('roomIdContainer').style.display = 'inline';
-        document.getElementById('allowInputLabel').style.display = 'inline-flex';
-        document.getElementById('joinRoomInput').disabled = true;
-        document.getElementById('joinBtn').disabled = true;
-        appendToTerminal(`[Remote] Host session re-established. Room ID: ${roomId}\n`, 'remote-msg');
-        saveSession();
-      });
-
-      peer.on('connection', handleIncomingConnection);
-
-      peer.on('error', (err) => {
-        appendToTerminal(`[Remote Error] ${err.message}\n`, 'error-msg');
-        if (err.type === 'unavailable-id') {
-          // ID taken — old session still registered, wait and retry
-          appendToTerminal(`[Remote] Room ID still registered on signaling server. Retrying...\n`, 'remote-msg');
-        }
-        isHost = false;
-        scheduleReconnect('host', roomId);
-      });
-
-      peer.on('disconnected', () => {
-        if (isHost) {
-          appendToTerminal(`[Remote] Lost connection to signaling server. Attempting to reconnect...\n`, 'error-msg');
-          // PeerJS has built-in reconnect for signaling
-          try { peer.reconnect(); } catch {
-            isHost = false;
-            scheduleReconnect('host', roomId);
-          }
-        }
-      });
-    }
-
-    function reconnectPeer(roomId) {
-      if (isPeer) return; // already reconnected
-      const peerId = 'serial-console-' + roomId;
-      appendToTerminal(`[Remote] Reconnecting to room ${roomId}...\n`, 'remote-msg');
-
-      // Destroy old peer if exists
-      if (peer) { try { peer.destroy(); } catch {} }
-
-      peer = new Peer(PEER_CONFIG);
-
-      peer.on('open', () => {
-        peerConnection = peer.connect(peerId, { serialization: 'json' });
-
-        const joinTimeout = setTimeout(() => {
-          if (!isPeer) {
-            appendToTerminal('[Remote] Reconnect attempt timed out.\n', 'error-msg');
-            scheduleReconnect('peer', roomId);
-          }
-        }, 15000);
-
-        setupPeerConnectionHandlers(peerConnection, roomId, joinTimeout);
-      });
-
-      peer.on('error', (err) => {
-        appendToTerminal(`[Remote Error] ${err.message}\n`, 'error-msg');
-        if (!isPeer) scheduleReconnect('peer', roomId);
-      });
-    }
-
-    // Override appendToTerminal to also capture history and broadcast
-    const _origAppend = appendToTerminal;
-    appendToTerminal = function(text, className) {
-      _origAppend(text, className);
-      // Capture to history buffer (cap at 100KB)
-      terminalHistory += text;
-      if (terminalHistory.length > 100000) {
-        terminalHistory = terminalHistory.slice(-80000);
-      }
-      // Host: broadcast to all connected peers
-      if (isHost && hostConnections.length > 0) {
-        const msg = { type: 'terminal', data: text, className: className || null };
-        hostConnections.forEach(conn => {
-          try { conn.send(msg); } catch (e) { console.error('[Remote] Send error:', e); }
-        });
-      }
-    };
-
-    function generateRoomId() {
-      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-      let id = '';
-      for (let i = 0; i < 6; i++) id += chars[Math.floor(Math.random() * chars.length)];
-      return id;
-    }
-
-    function generateHalf() {
-      const arr = new Uint8Array(32);
-      crypto.getRandomValues(arr);
-      return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
-    }
-
-    async function deriveSessionToken(hostHalf, peerHalf) {
-      const combined = new TextEncoder().encode(hostHalf + ':' + peerHalf);
-      const hash = await crypto.subtle.digest('SHA-256', combined);
-      return Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2, '0')).join('');
-    }
-
-    function updatePeerCountUI() {
-      const countEl = document.getElementById('peerCount');
-      const n = hostConnections.length;
-      countEl.textContent = n + (n === 1 ? ' peer' : ' peers');
-      countEl.style.display = n > 0 ? 'inline-flex' : 'none';
-      // Also refresh the list if visible
-      if (document.getElementById('peerListPanel').classList.contains('visible')) {
-        renderPeerList();
-      }
-      if (n === 0) {
-        document.getElementById('peerListPanel').classList.remove('visible');
-      }
-    }
-
-    function togglePeerList() {
-      const panel = document.getElementById('peerListPanel');
-      panel.classList.toggle('visible');
-      if (panel.classList.contains('visible')) renderPeerList();
-    }
-
-    // Close peer list when clicking outside
-    document.addEventListener('click', (e) => {
-      const panel = document.getElementById('peerListPanel');
-      const badge = document.getElementById('peerCount');
-      if (panel.classList.contains('visible') && !panel.contains(e.target) && e.target !== badge) {
-        panel.classList.remove('visible');
-      }
-    });
-
-    function formatDuration(ms) {
-      const s = Math.floor(ms / 1000);
-      if (s < 60) return s + 's';
-      const m = Math.floor(s / 60);
-      if (m < 60) return m + 'm ' + (s % 60) + 's';
-      const h = Math.floor(m / 60);
-      return h + 'h ' + (m % 60) + 'm';
-    }
-
-    function getPeerLabel(info) {
-      return info.name || info.ip || info.id.replace('serial-console-', '').substring(0, 8);
-    }
-
-    function renderPeerList() {
-      const body = document.getElementById('peerListBody');
-      if (hostConnections.length === 0) {
-        body.innerHTML = '<div class="peer-list-empty">No peers connected</div>';
-        return;
-      }
-      const now = Date.now();
-      body.innerHTML = hostConnections.map((conn, idx) => {
-        const info = peerInfoMap.get(conn) || {};
-        const displayName = info.name || '';
-        const ip = info.ip || 'Resolving...';
-        const duration = info.connectedAt ? formatDuration(now - info.connectedAt) : '—';
-        const peerCanWrite = info.canWrite || false;
-        const permClass = peerCanWrite ? 'rw' : 'ro';
-        const permLabel = peerCanWrite ? 'R/W' : 'View';
-        const nameHtml = displayName
-          ? `<span style="color:var(--accent);font-weight:600;font-size:0.8rem;">${escapeHtml(displayName)}</span>`
-          : '';
-        return `<div class="peer-list-item">
-          ${nameHtml}
-          <span class="peer-ip">${escapeHtml(ip)}</span>
-          <span class="peer-perm ${permClass}" style="cursor:pointer;" onclick="togglePeerWrite(${idx})" title="Click to toggle between Read/Write and View Only">${permLabel}</span>
-          <span class="peer-duration">${duration}</span>
-          <span style="cursor:pointer;color:var(--danger);font-size:0.7rem;padding:1px 6px;border:1px solid var(--danger);border-radius:8px;opacity:0.7;transition:opacity 0.15s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7" onclick="kickPeer(${idx})" title="Kick this peer and revoke their session token">✕</span>
-        </div>`;
-      }).join('');
-    }
-
-    // Refresh durations every 10s while panel is open
-    setInterval(() => {
-      if (document.getElementById('peerListPanel').classList.contains('visible')) {
-        renderPeerList();
-      }
-    }, 10000);
-
-    // Extract remote IP from WebRTC stats
-    async function extractRemoteIP(conn) {
-      try {
-        const pc = conn.peerConnection;
-        if (!pc) return null;
-
-        // Method 1: getStats() — look for succeeded candidate pairs
-        const stats = await pc.getStats();
-        for (const [, report] of stats) {
-          if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-            // Find the remote candidate
-            for (const [, r] of stats) {
-              if (r.type === 'remote-candidate' && r.id === report.remoteCandidateId) {
-                if (r.address || r.ip) return r.address || r.ip;
-              }
-            }
-          }
-        }
-
-        // Method 2: Fall back to any remote candidate with a non-mDNS address
-        for (const [, report] of stats) {
-          if (report.type === 'remote-candidate') {
-            const addr = report.address || report.ip;
-            if (addr && !addr.endsWith('.local')) return addr;
-          }
-        }
-
-        return null;
-      } catch (e) {
-        console.warn('[Peers] Failed to extract IP:', e);
-        return null;
-      }
-    }
-
-    // Poll for remote IP (it may not be available immediately)
-    function startIPResolution(conn) {
-      let attempts = 0;
-      const interval = setInterval(async () => {
-        attempts++;
-        const ip = await extractRemoteIP(conn);
-        if (ip) {
-          const info = peerInfoMap.get(conn);
-          if (info) {
-            info.ip = ip;
-            peerInfoMap.set(conn, info);
-          }
-          updatePeerCountUI();
-          clearInterval(interval);
-        } else if (attempts >= 10) {
-          // After ~10s give up resolving
-          const info = peerInfoMap.get(conn);
-          if (info && !info.ip) {
-            info.ip = 'Unknown';
-            peerInfoMap.set(conn, info);
-          }
-          updatePeerCountUI();
-          clearInterval(interval);
-        }
-      }, 1000);
-    }
-
-    // ---- HOST LOGIC ----
-
-    function handleIncomingConnection(conn) {
-      appendToTerminal(`[Remote] Incoming peer connection...\n`, 'remote-msg');
-
-      let handled = false;
-
-      const pending = {
-        conn: conn,
-        id: conn.peer || 'unknown',
-        name: null,
-        ip: null,
-        ready: false
-      };
-
-      const handlePendingOpen = () => {
-        if (pending.ready) return;
-        pending.ready = true;
-
-        // Tell peer we're waiting for their identify (which may include a session key)
-        conn.send({ type: 'pending', message: 'Waiting for host approval...' });
-
-        // Listen for identify — check for session key to auto-approve
-        conn.on('data', (msg) => {
-          try {
-            const data = (typeof msg === 'string') ? JSON.parse(msg) : msg;
-            if (data.type === 'identify') {
-              if (data.name) pending.name = data.name.substring(0, 20);
-
-              // Check for valid session token — auto-approve returning peers
-              if (!handled && data.sessionToken && approvedSessionKeys.has(data.sessionToken)) {
-                handled = true;
-                const savedInfo = approvedSessionKeys.get(data.sessionToken);
-                appendToTerminal(`[Remote] ${pending.name || savedInfo.name || 'Peer'} reconnected with valid session token — auto-approved.\n`, 'remote-msg');
-                autoAcceptPeer(conn, pending, data.sessionToken);
-                return;
-              }
-
-              // Check for valid one-time invite token
-              if (!handled && data.inviteToken && inviteTokens.has(data.inviteToken)) {
-                const invite = inviteTokens.get(data.inviteToken);
-                if (!invite.used) {
-                  handled = true;
-                  invite.used = true;
-                  appendToTerminal(`[Remote] ${pending.name || 'Peer'} joined via invite link — auto-approved.\n`, 'remote-msg');
-                  autoAcceptPeer(conn, pending, null);
-                  return;
-                }
-              }
-
-              renderPendingList();
-            }
-          } catch {}
-        });
-
-        // Brief delay to allow identify+token to arrive before showing pending UI
-        setTimeout(() => {
-          if (!handled) {
-            resolveIPForPending(conn, pending);
-            pendingConnections.push(pending);
-            renderPendingList();
-            appendToTerminal(`[Remote] Peer "${pending.name || pending.id}" is waiting for approval.\n`, 'remote-msg');
-          }
-        }, 500);
-      };
-
-      conn.on('open', handlePendingOpen);
-      if (conn.open) handlePendingOpen();
-
-      conn.on('close', () => {
-        pendingConnections = pendingConnections.filter(p => p !== pending);
-        renderPendingList();
-      });
-
-      conn.on('error', () => {
-        pendingConnections = pendingConnections.filter(p => p !== pending);
-        renderPendingList();
-      });
-    }
-
-    // Auto-accept a peer that presented a valid session key
-    // Shared: promote a connection to fully accepted, set up listeners, initiate session exchange
-    function promoteConnection(conn, pending, existingSessionToken) {
-      // Remove from pending if it got added
-      pendingConnections = pendingConnections.filter(p => p !== pending);
-      renderPendingList();
-
-      if (hostConnections.includes(conn)) return;
-      hostConnections.push(conn);
-
-      const globalAllow = document.getElementById('allowRemoteInput').checked;
-      peerInfoMap.set(conn, {
-        id: pending.id,
-        name: pending.name || null,
-        ip: pending.ip || null,
-        connectedAt: Date.now(),
-        canWrite: globalAllow,
-        sessionToken: existingSessionToken || null
-      });
-
-      if (!pending.ip || pending.ip === 'Unknown' || pending.ip === 'Resolving...') {
-        startIPResolution(conn);
-      }
-
-      updatePeerCountUI();
-      const label = pending.name || pending.ip || pending.id;
-      appendToTerminal(`[Remote] ${label} connected (${hostConnections.length} total)\n`, 'remote-msg');
-
-      // Send accepted + session data
-      conn.send({ type: 'accepted' });
-      conn.send({ type: 'history', data: terminalHistory });
-      conn.send({ type: 'status', connected: isConnected, info: portInfo.textContent });
-      conn.send({ type: 'permission', canWrite: globalAllow });
-
-      // Initiate session token exchange (only for new connections without one)
-      if (!existingSessionToken) {
-        const hostHalf = generateHalf();
-        conn.send({ type: 'session-exchange', hostHalf: hostHalf });
-
-        // Store hostHalf temporarily so we can derive the token when peerHalf arrives
-        const info = peerInfoMap.get(conn);
-        if (info) info._hostHalf = hostHalf;
-      }
-
-      saveSession();
-
-      // Set up real data listener
-      try { conn.removeAllListeners('data'); } catch { try { conn.off('data'); } catch {} }
-      conn.on('data', async (msg) => {
-        try {
-          const data = (typeof msg === 'string') ? JSON.parse(msg) : msg;
-          if (data.type === 'identify') {
-            const info = peerInfoMap.get(conn);
-            if (info && data.name) {
-              info.name = data.name.substring(0, 20);
-              updatePeerCountUI();
-            }
-          } else if (data.type === 'session-exchange' && data.peerHalf) {
-            // Peer sent their half — derive the session token
-            const info = peerInfoMap.get(conn);
-            if (info && info._hostHalf) {
-              const token = await deriveSessionToken(info._hostHalf, data.peerHalf);
-              info.sessionToken = token;
-              delete info._hostHalf;
-              approvedSessionKeys.set(token, {
-                name: info.name || null,
-                approvedAt: Date.now()
-              });
-              appendToTerminal(`[Remote] Session token established for ${getPeerLabel(info)}.\n`, 'remote-msg');
-            }
-          } else if (data.type === 'command') {
-            const peerInfo = peerInfoMap.get(conn);
-            if (peerInfo && peerInfo.canWrite) {
-              if (isConnected && port && port.writable) {
-                sendData(data.data);
-                appendToTerminal(`${data.data}`, 'remote-msg');
-              }
-            }
-          }
-        } catch (e) {
-          console.error('[Remote] Failed to parse peer data:', e);
-        }
-      });
-
-      try { conn.removeAllListeners('close'); } catch { try { conn.off('close'); } catch {} }
-      try { conn.removeAllListeners('error'); } catch { try { conn.off('error'); } catch {} }
-      conn.on('close', () => {
-        const info = peerInfoMap.get(conn);
-        const closeLabel = info ? (info.name || info.ip || 'unknown') : '';
-        peerInfoMap.delete(conn);
-        hostConnections = hostConnections.filter(c => c !== conn);
-        updatePeerCountUI();
-        appendToTerminal(`[Remote] ${closeLabel ? closeLabel + ' ' : 'Peer '}disconnected (${hostConnections.length} remaining)\n`, 'remote-msg');
-      });
-      conn.on('error', (err) => {
-        appendToTerminal(`[Remote Error] Host conn error: ${err}\n`, 'error-msg');
-        peerInfoMap.delete(conn);
-        hostConnections = hostConnections.filter(c => c !== conn);
-        updatePeerCountUI();
-      });
-    }
-
-    // Auto-accept a peer with a valid session token (reconnect) or invite token
-    function autoAcceptPeer(conn, pending, existingSessionToken) {
-      promoteConnection(conn, pending, existingSessionToken);
-    }
-
-    async function resolveIPForPending(conn, pending) {
-      for (let i = 0; i < 10; i++) {
-        const ip = await extractRemoteIP(conn);
-        if (ip) {
-          pending.ip = ip;
-          renderPendingList();
-          return;
-        }
-        await new Promise(r => setTimeout(r, 1000));
-      }
-      pending.ip = 'Unknown';
-      renderPendingList();
-    }
-
-    function renderPendingList() {
-      const bar = document.getElementById('pendingBar');
-      const list = document.getElementById('pendingList');
-
-      if (pendingConnections.length === 0) {
-        bar.classList.remove('has-pending');
-        list.innerHTML = '';
-        return;
-      }
-
-      bar.classList.add('has-pending');
-      list.innerHTML = pendingConnections.map((p, idx) => {
-        const name = p.name || '';
-        const ip = p.ip || 'Resolving...';
-        const nameHtml = name ? `<span class="pending-name">${escapeHtml(name)}</span>` : '';
-        return `<div class="pending-request">
-          <span style="color:#ffd700;">&#9888;</span>
-          <span class="pending-info">
-            ${nameHtml}
-            <span class="pending-ip">${escapeHtml(ip)}</span>
-            <span style="color:#8892b0;font-size:0.65rem;">wants to join</span>
-          </span>
-          <button class="accept-btn" onclick="acceptPeer(${idx})">Accept</button>
-          <button class="reject-btn" onclick="rejectPeer(${idx})">Reject</button>
-        </div>`;
-      }).join('');
-    }
-
-    function acceptPeer(index) {
-      const pending = pendingConnections[index];
-      if (!pending) return;
-
-      // Remove from pending
-      pendingConnections.splice(index, 1);
-      renderPendingList();
-
-      const label = pending.name || pending.ip || pending.id;
-      appendToTerminal(`[Remote] ${label} accepted.\n`, 'remote-msg');
-
-      // Promote with no existing session token — exchange will generate one
-      promoteConnection(pending.conn, pending, null);
-    }
-
-    function rejectPeer(index) {
-      const pending = pendingConnections[index];
-      if (!pending) return;
-      const conn = pending.conn;
-      const label = pending.name || pending.ip || pending.id;
-
-      // Notify peer they were rejected
-      try { conn.send({ type: 'rejected', message: 'Connection rejected by host.' }); } catch {}
-
-      // Close after a short delay so the message arrives
-      setTimeout(() => {
-        try { conn.close(); } catch {}
-      }, 500);
-
-      pendingConnections.splice(index, 1);
-      renderPendingList();
-      appendToTerminal(`[Remote] ${label} — connection rejected.\n`, 'remote-msg');
-    }
-
-    function startSharing() {
-      if (isHost || isPeer) return;
-      const roomId = generateRoomId();
-      const peerId = 'serial-console-' + roomId;
-
-      document.getElementById('shareBtn').disabled = true;
-      appendToTerminal(`[Remote] Starting share session...\n`, 'remote-msg');
-
-      peer = new Peer(peerId, PEER_CONFIG);
-
-      peer.on('open', (id) => {
-        isHost = true;
-        currentRoomId = roomId;
-        reconnectAttempts = 0;
-        document.getElementById('roomIdDisplay').textContent = roomId;
-        document.getElementById('roomIdContainer').style.display = 'inline';
-        document.getElementById('allowInputLabel').style.display = 'inline-flex';
-        document.getElementById('joinRoomInput').disabled = true;
-        document.getElementById('joinBtn').disabled = true;
-        appendToTerminal(`[Remote] Session shared. Room ID: ${roomId}\n`, 'remote-msg');
-        saveSession();
-      });
-
-      peer.on('connection', handleIncomingConnection);
-
-      peer.on('disconnected', () => {
-        if (isHost && currentRoomId) {
-          appendToTerminal(`[Remote] Lost signaling connection. Reconnecting...\n`, 'error-msg');
-          try { peer.reconnect(); } catch {
-            isHost = false;
-            scheduleReconnect('host', currentRoomId);
-          }
-        }
-      });
-
-      peer.on('error', (err) => {
-        appendToTerminal(`[Remote Error] ${err.message}\n`, 'error-msg');
-        if (!isHost) {
-          document.getElementById('shareBtn').disabled = false;
-        } else if (currentRoomId) {
-          isHost = false;
-          scheduleReconnect('host', currentRoomId);
-        }
-      });
-    }
-
-    function stopSharing() {
-      if (!isHost) return;
-      cancelReconnect();
-      // Close pending connections
-      pendingConnections.forEach(p => {
-        try { p.conn.close(); } catch {}
-      });
-      pendingConnections = [];
-      renderPendingList();
-      // Close accepted connections
-      hostConnections.forEach(conn => {
-        try { conn.close(); } catch {}
-      });
-      hostConnections = [];
-      peerInfoMap.clear();
-      approvedSessionKeys.clear();
-      inviteTokens.clear();
-      if (peer) { peer.destroy(); peer = null; }
-      isHost = false;
-      currentRoomId = null;
-      clearSession();
-
-      document.getElementById('shareBtn').disabled = false;
-      document.getElementById('roomIdContainer').style.display = 'none';
-      document.getElementById('allowInputLabel').style.display = 'none';
-      document.getElementById('peerCount').style.display = 'none';
-      document.getElementById('joinRoomInput').disabled = false;
-      document.getElementById('joinBtn').disabled = false;
-      appendToTerminal('[Remote] Session sharing stopped.\n', 'remote-msg');
-    }
-
-    function copyRoomId() {
-      const roomId = document.getElementById('roomIdDisplay').textContent;
-      navigator.clipboard.writeText(roomId).then(() => {
-        appendToTerminal(`[Remote] Room ID "${roomId}" copied to clipboard.\n`, 'remote-msg');
-      });
-    }
-
-    function generateInviteToken() {
-      const arr = new Uint8Array(16);
-      crypto.getRandomValues(arr);
-      return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
-    }
-
-    function generateInviteLink() {
-      if (!isHost || !currentRoomId) return;
-      const token = generateInviteToken();
-      inviteTokens.set(token, { createdAt: Date.now(), used: false });
-
-      const baseUrl = window.location.href.split('#')[0];
-      const link = `${baseUrl}#join=${currentRoomId}&token=${token}`;
-
-      navigator.clipboard.writeText(link).then(() => {
-        appendToTerminal(`[Remote] One-time invite link copied to clipboard.\n`, 'remote-msg');
-      }).catch(() => {
-        // Fallback if clipboard fails
-        appendToTerminal(`[Remote] Invite link: ${link}\n`, 'remote-msg');
-      });
-    }
-
-    function updatePeerPermissions() {
-      const allowInput = document.getElementById('allowRemoteInput').checked;
-      hostConnections.forEach(conn => {
-        const info = peerInfoMap.get(conn);
-        if (info) info.canWrite = allowInput;
-        try { conn.send({ type: 'permission', canWrite: allowInput }); } catch {}
-      });
-      appendToTerminal(`[Remote] Remote input ${allowInput ? 'enabled' : 'disabled'} for all peers.\n`, 'remote-msg');
-      if (document.getElementById('peerListPanel').classList.contains('visible')) renderPeerList();
-    }
-
-    // Toggle write permission for a single peer by index
-    function togglePeerWrite(index) {
-      const conn = hostConnections[index];
-      if (!conn) return;
-      const info = peerInfoMap.get(conn);
-      if (!info) return;
-      info.canWrite = !info.canWrite;
-      try { conn.send({ type: 'permission', canWrite: info.canWrite }); } catch {}
-      appendToTerminal(`[Remote] ${getPeerLabel(info)}: input ${info.canWrite ? 'enabled' : 'disabled'}.\n`, 'remote-msg');
-      renderPeerList();
-    }
-
-    function kickPeer(index) {
-      const conn = hostConnections[index];
-      if (!conn) return;
-      const info = peerInfoMap.get(conn);
-      const label = info ? getPeerLabel(info) : 'Peer';
-
-      // Revoke their session token so they can't auto-rejoin
-      if (info && info.sessionToken) {
-        approvedSessionKeys.delete(info.sessionToken);
-      }
-
-      // Notify peer they were kicked
-      try { conn.send({ type: 'kicked', message: 'You have been disconnected by the host.' }); } catch {}
-
-      // Close after short delay so message arrives
-      setTimeout(() => {
-        try { conn.close(); } catch {}
-      }, 500);
-
-      peerInfoMap.delete(conn);
-      hostConnections.splice(index, 1);
-      updatePeerCountUI();
-      appendToTerminal(`[Remote] ${label} was kicked.\n`, 'remote-msg');
-    }
-
-    // ---- PEER LOGIC ----
-
-    function setupPeerConnectionHandlers(conn, roomId, timeoutId) {
-      let peerApproved = false;
-
-      const handlePeerConnOpen = () => {
-        if (isPeer || peerApproved) return;
-        // DataChannel is open — cancel the signaling timeout
-        // The host approval has no time limit; peer can leave manually
-        if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
-
-        // Send identify with name, session token (for reconnect), and/or auth token (invite)
+    const sdp = JSON.stringify(privatePC.localDescription);
+    const encrypted = await aesEncrypt(sdp, privateAuthKey);
+    const keyStr = toBase64Url(privateAuthKey);
+    const base = window.location.href.split('#')[0];
+    privateInviteLink = `${base}#m=p&o=${encrypted}&k=${keyStr}`;
+
+    await navigator.clipboard.writeText(privateInviteLink).catch(() => {});
+    isHost = true;
+    $('privateShareBtn').style.display = 'none';
+    $('privateHostActive').style.display = 'block';
+    appendLine('[P2P Private] Invite link created and copied.', 'sys');
+    showToast('Invite link copied!', 'success');
+  } catch (err) {
+    appendLine(`[P2P Private] Error: ${err.message}`, 'err');
+    showToast('Failed to create invite', 'error');
+  }
+}
+
+function privateCopyInvite() {
+  navigator.clipboard.writeText(privateInviteLink).then(() => showToast('Link copied!', 'success')).catch(() => showToast('Copy failed', 'error'));
+}
+
+async function privateCompleteConnection() {
+  const answerCode = $('privateAnswerInput').value.trim();
+  if (!answerCode) { showToast('Paste the connection code', 'error'); return; }
+  try {
+    const answerSDP = JSON.parse(atob(answerCode));
+    await privatePC.setRemoteDescription(new RTCSessionDescription(answerSDP));
+    appendLine('[P2P Private] Connection code accepted. Connecting...', 'sys');
+  } catch (err) {
+    appendLine(`[P2P Private] Invalid code: ${err.message}`, 'err');
+    showToast('Invalid connection code', 'error');
+  }
+}
+
+async function privateJoinViaLink(offerEnc, keyStr) {
+  try {
+    const keyBytes = fromBase64Url(keyStr);
+    const sdpJson = await aesDecrypt(offerEnc, keyBytes);
+    const offer = JSON.parse(sdpJson);
+
+    privateAnswerPC = new RTCPeerConnection(getIceConfig());
+
+    privateAnswerPC.ondatachannel = (e) => {
+      privateAnswerDC = e.channel;
+      peerConnection = 'private';
+      privateAnswerDC.onopen = () => {
+        appendLine('[P2P Private] Connected to host!', 'sys');
+        // Send identify
         const identifyMsg = { type: 'identify' };
         if (peerName) identifyMsg.name = peerName;
         if (peerSessionKey) identifyMsg.sessionToken = peerSessionKey;
-        if (peerInviteToken) { identifyMsg.inviteToken = peerInviteToken; peerInviteToken = null; }
-        conn.send(identifyMsg);
-
-        appendToTerminal(`[Remote] Connected to host — waiting for approval...\n`, 'remote-msg');
-        document.getElementById('peerStatus').style.display = 'inline-flex';
-        document.getElementById('peerStatus').textContent = 'Waiting for approval...';
-        document.getElementById('peerStatus').style.borderColor = '#ffd700';
-        document.getElementById('peerStatus').style.color = '#ffd700';
-        document.getElementById('peerStatus').style.background = '#3d2a0a';
-        document.getElementById('shareBtn').disabled = true;
-        document.getElementById('leaveBtn').style.display = '';
+        privateAnswerDC.send(JSON.stringify(identifyMsg));
       };
-
-      conn.on('open', handlePeerConnOpen);
-      if (conn.open) handlePeerConnOpen();
-
-      conn.on('data', (raw) => {
-        try {
-          const msg = (typeof raw === 'string') ? JSON.parse(raw) : raw;
-          switch (msg.type) {
-            case 'pending':
-              // Host acknowledged, still waiting
-              appendToTerminal(`[Remote] ${msg.message || 'Waiting for host approval...'}\n`, 'remote-msg');
-              break;
-            case 'accepted':
-              // Host approved us!
-              if (timeoutId) clearTimeout(timeoutId);
-              peerApproved = true;
-              isPeer = true;
-              currentRoomId = roomId;
-              reconnectAttempts = 0;
-
-              document.getElementById('peerStatus').textContent = 'Connected to host';
-              document.getElementById('peerStatus').style.borderColor = '';
-              document.getElementById('peerStatus').style.color = '';
-              document.getElementById('peerStatus').style.background = '';
-              document.getElementById('permissionStatus').style.display = 'inline-flex';
-              document.getElementById('joinRoomInput').disabled = true;
-
-              document.body.classList.add('peer-mode');
-              document.getElementById('connectBtn').style.display = 'none';
-
-              appendToTerminal(`[Remote] Host accepted your connection!\n`, 'remote-msg');
-              saveSession();
-              break;
-            case 'session-exchange':
-              // Host sent their half — generate ours, derive the session token
-              if (msg.hostHalf) {
-                const myHalf = generateHalf();
-                conn.send({ type: 'session-exchange', peerHalf: myHalf });
-                deriveSessionToken(msg.hostHalf, myHalf).then(token => {
-                  peerSessionKey = token;
-                  saveSession();
-                  appendToTerminal(`[Remote] Session token negotiated.\n`, 'remote-msg');
-                });
-              }
-              break;
-            case 'rejected':
-              appendToTerminal(`[Remote] ${msg.message || 'Connection rejected by host.'}\n`, 'error-msg');
-              // Clean up
-              document.getElementById('peerStatus').style.display = 'none';
-              document.getElementById('leaveBtn').style.display = 'none';
-              document.getElementById('shareBtn').disabled = false;
-              document.getElementById('joinBtn').disabled = false;
-              document.getElementById('joinRoomInput').disabled = false;
-              if (timeoutId) clearTimeout(timeoutId);
-              break;
-            case 'kicked':
-              appendToTerminal(`[Remote] ${msg.message || 'You were kicked by the host.'}\n`, 'error-msg');
-              // Prevent auto-reconnect by clearing state before close fires
-              isPeer = false;
-              peerApproved = false;
-              currentRoomId = null;
-              canWrite = false;
-              peerSessionKey = null; // Revoked by host
-              clearSession();
-              break;
-            case 'terminal':
-              _origAppend(msg.data, msg.className);
-              break;
-            case 'history':
-              terminal.innerHTML = '';
-              _origAppend(msg.data);
-              break;
-            case 'status':
-              if (msg.connected) {
-                updateStatus(true, msg.info);
-              }
-              break;
-            case 'permission':
-              canWrite = msg.canWrite;
-              sendInputEl.disabled = !canWrite;
-              sendBtn.disabled = !canWrite;
-              const badge = document.getElementById('permissionStatus');
-              badge.textContent = canWrite ? 'Read/Write' : 'View Only';
-              badge.className = 'permission-badge ' + (canWrite ? 'read-write' : 'view-only');
-              sendInputEl.placeholder = canWrite ? 'Type command and press Enter...' : 'View only — host has not enabled remote input';
-              break;
-          }
-        } catch {}
-      });
-
-      conn.on('close', () => {
-        const wasConnected = isPeer;
-        isPeer = false;
-        peerApproved = false;
-        canWrite = false;
-        peerConnection = null;
-        document.getElementById('peerStatus').style.display = 'none';
-        document.getElementById('peerStatus').textContent = 'Connected to host';
-        document.getElementById('peerStatus').style.borderColor = '';
-        document.getElementById('peerStatus').style.color = '';
-        document.getElementById('peerStatus').style.background = '';
-        document.getElementById('permissionStatus').style.display = 'none';
-        sendInputEl.disabled = true;
-        sendBtn.disabled = true;
-        appendToTerminal('[Remote] Disconnected from host.\n', 'error-msg');
-
-        // Auto-reconnect if we were previously connected
-        if (wasConnected && currentRoomId) {
-          scheduleReconnect('peer', currentRoomId);
-        } else {
-          document.body.classList.remove('peer-mode');
-          document.getElementById('shareBtn').disabled = false;
-          document.getElementById('joinBtn').disabled = false;
-          document.getElementById('joinRoomInput').disabled = false;
-          document.getElementById('connectBtn').style.display = '';
-          document.getElementById('leaveBtn').style.display = 'none';
-        }
-      });
-
-      conn.on('error', (err) => {
-        appendToTerminal(`[Remote Error] ${err.message}\n`, 'error-msg');
-      });
-    }
-
-    function disconnectPeer() {
-      cancelReconnect();
-      isPeer = false;
-      canWrite = false;
-      currentRoomId = null;
-      peerSessionKey = null;
-      clearSession();
-      if (peerConnection) { try { peerConnection.close(); } catch {} peerConnection = null; }
-      if (peer) { try { peer.destroy(); } catch {} peer = null; }
-      document.body.classList.remove('peer-mode');
-      document.getElementById('peerStatus').style.display = 'none';
-      document.getElementById('permissionStatus').style.display = 'none';
-      document.getElementById('leaveBtn').style.display = 'none';
-      document.getElementById('shareBtn').disabled = false;
-      document.getElementById('joinBtn').disabled = false;
-      document.getElementById('joinRoomInput').disabled = false;
-      document.getElementById('connectBtn').style.display = '';
-      sendInputEl.disabled = true;
-      sendBtn.disabled = true;
-      appendToTerminal('[Remote] Session left.\n', 'remote-msg');
-    }
-
-    function joinSession() {
-      if (isHost || isPeer) return;
-      const roomId = document.getElementById('joinRoomInput').value.trim().toUpperCase();
-      if (!roomId || roomId.length !== 6) {
-        appendToTerminal('[Remote] Please enter a valid 6-character Room ID.\n', 'error-msg');
-        return;
-      }
-
-      // Capture friendly name
-      peerName = document.getElementById('peerNameInput').value.trim().substring(0, 20);
-
-      const peerId = 'serial-console-' + roomId;
-      document.getElementById('joinBtn').disabled = true;
-      appendToTerminal(`[Remote] Connecting to room ${roomId}...\n`, 'remote-msg');
-
-      peer = new Peer(PEER_CONFIG);
-
-      peer.on('open', () => {
-        appendToTerminal(`[Remote] Signaling connected. Reaching out to host...\n`, 'remote-msg');
-        peerConnection = peer.connect(peerId, { serialization: 'json' });
-
-        const joinTimeout = setTimeout(() => {
-          if (!isPeer) {
-            appendToTerminal('[Remote] Connection timed out. Host may not be sharing.\n', 'error-msg');
-            if (peerConnection) { try { peerConnection.close(); } catch {} }
-            if (peer) { peer.destroy(); peer = null; }
-            peerConnection = null;
-            document.getElementById('joinBtn').disabled = false;
-          }
-        }, 15000);
-
-        setupPeerConnectionHandlers(peerConnection, roomId, joinTimeout);
-      });
-
-      peer.on('error', (err) => {
-        appendToTerminal(`[Remote Error] ${err.message}\n`, 'error-msg');
-        if (!isPeer) {
-          document.getElementById('joinBtn').disabled = false;
-        }
-      });
-    }
-
-    // Override sendData for peer mode — send via WebRTC instead of serial
-    const _origSendData = sendData;
-    sendData = async function(text) {
-      if (isPeer && peerConnection && canWrite) {
-        // Send command to host via WebRTC
-        peerConnection.send({ type: 'command', data: text });
-        if (document.getElementById('echoLocal').checked) {
-          _origAppend(text, 'sent-msg');
-        }
-        return;
-      }
-      // Normal serial send
-      return _origSendData(text);
+      privateAnswerDC.onmessage = (e) => {
+        try { handlePeerMessage(JSON.parse(e.data)); } catch {}
+      };
+      privateAnswerDC.onclose = () => {
+        appendLine('[P2P Private] Disconnected from host.', 'sys');
+        cleanupPeerState();
+      };
     };
 
-    // Handle room ID input — auto-uppercase and join on Enter
-    document.getElementById('joinRoomInput').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        joinSession();
+    await privateAnswerPC.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await privateAnswerPC.createAnswer();
+    await privateAnswerPC.setLocalDescription(answer);
+
+    // Wait for ICE
+    await new Promise((resolve) => {
+      if (privateAnswerPC.iceGatheringState === 'complete') { resolve(); return; }
+      privateAnswerPC.onicecandidate = (e) => { if (!e.candidate) resolve(); };
+      setTimeout(resolve, 5000);
+    });
+
+    const answerCode = btoa(JSON.stringify(privateAnswerPC.localDescription));
+
+    // Show the connection code to user
+    appendLine('[P2P Private] Connection code generated. Copy it and send to host.', 'sys');
+    showToast('Connection code ready!', 'info');
+
+    // Open panel to P2P tab and show the code
+    togglePanel('sharing'); switchPanelTab('p2p'); setP2PMode('private');
+    $('privateShareBtn').style.display = 'none';
+    $('privateHostActive').style.display = 'none';
+
+    // Create a display for the answer code
+    const privateUI = $('p2pPrivateUI');
+    const codeDiv = document.createElement('div');
+    codeDiv.innerHTML = `<div class="room-display"><div class="room-label">YOUR CONNECTION CODE</div><p style="font-size:11px;color:var(--text-secondary);margin:8px 0">Copy this and send it to the host:</p><div class="sdp-display" id="peerAnswerCode">${escapeHTML(answerCode)}</div><button class="btn btn-primary" onclick="navigator.clipboard.writeText(document.getElementById('peerAnswerCode').textContent).then(()=>showToast('Copied!','success'))" style="margin:4px auto">Copy Code</button></div>`;
+    privateUI.appendChild(codeDiv);
+
+    // Clear URL hash
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  } catch (err) {
+    appendLine(`[P2P Private] Join error: ${err.message}`, 'err');
+    showToast('Failed to join', 'error');
+  }
+}
+
+function disconnectPeer() {
+  if (privateAnswerDC) { try { privateAnswerDC.close(); } catch {} privateAnswerDC = null; }
+  if (privateAnswerPC) { try { privateAnswerPC.close(); } catch {} privateAnswerPC = null; }
+  if (quickRoom) { try { quickRoom.leave(); } catch {} quickRoom = null; quickSendMsg = null; }
+  peerConnection = null; peerSessionKey = null;
+  cleanupPeerState();
+  appendLine('[P2P] Disconnected.', 'sys');
+}
+
+// =============================================
+// Quick Connect Mode P2P (Trystero/MQTT)
+// =============================================
+async function quickStartHost() {
+  if (isHost || isPeer) return;
+  try {
+    const { joinRoom, selfId } = await loadTrystero();
+    quickRoomId = generateRoomId();
+    quickRoomPassword = generatePassword();
+    quickRoom = joinRoom({ appId: 'serial-console-v2', password: quickRoomPassword }, quickRoomId);
+    const [sendMsg, getMsg] = quickRoom.makeAction('msg');
+    quickSendMsg = sendMsg;
+
+    getMsg((data, peerId) => handleHostMessage(data, peerId));
+
+    quickRoom.onPeerJoin(peerId => {
+      hostConnections.set(peerId, { pc: null, dc: null, name: '', canWrite: false, approved: false, joinedAt: Date.now() });
+      appendLine(`[P2P Quick] Peer ${peerId.substring(0, 8)} connected to room.`, 'sys');
+    });
+
+    quickRoom.onPeerLeave(peerId => {
+      hostConnections.delete(peerId);
+      pendingConnections = pendingConnections.filter(p => p.peerId !== peerId);
+      renderPending(); updatePeerListUI();
+      appendLine(`[P2P Quick] Peer ${peerId.substring(0, 8)} left.`, 'sys');
+    });
+
+    isHost = true;
+    $('quickRoomCode').textContent = quickRoomId;
+    $('quickPassword').textContent = quickRoomPassword;
+    $('quickShareBtn').style.display = 'none';
+    $('quickHostActive').style.display = 'block';
+    appendLine(`[P2P Quick] Sharing started. Room: ${quickRoomId}`, 'sys');
+    showToast('Room created!', 'success');
+  } catch (err) {
+    appendLine(`[P2P Quick] Error: ${err.message}`, 'err');
+    showToast('Failed to create room', 'error');
+  }
+}
+
+function quickCopyInfo() {
+  navigator.clipboard.writeText(`Room: ${quickRoomId}\nPassword: ${quickRoomPassword}`).then(() => showToast('Copied!', 'success'));
+}
+
+function quickStopHost() {
+  for (const [pid] of hostConnections) { sendToHostPeer(pid, { type: 'kicked', message: 'Host stopped sharing.' }); }
+  if (quickRoom) { try { quickRoom.leave(); } catch {} quickRoom = null; quickSendMsg = null; }
+  isHost = false; hostConnections.clear(); pendingConnections = []; approvedSessionKeys.clear();
+  $('quickShareBtn').style.display = 'block';
+  $('quickHostActive').style.display = 'none';
+  $('peerListArea').style.display = 'none';
+  $('pendingArea').style.display = 'none';
+  renderPending(); updatePeerListUI();
+  appendLine('[P2P Quick] Sharing stopped.', 'sys');
+}
+
+async function quickJoinSession() {
+  if (isHost || isPeer) return;
+  const roomId = $('quickJoinRoom').value.trim().toUpperCase();
+  const pass = $('quickJoinPass').value.trim();
+  peerName = $('peerNameInput').value.trim().substring(0, 20);
+  if (!roomId || roomId.length !== 6) { showToast('Enter a 6-char room code', 'error'); return; }
+  if (!pass) { showToast('Enter the password', 'error'); return; }
+
+  try {
+    const { joinRoom, selfId } = await loadTrystero();
+    quickRoom = joinRoom({ appId: 'serial-console-v2', password: pass }, roomId);
+    const [sendMsg, getMsg] = quickRoom.makeAction('msg');
+    quickSendMsg = sendMsg;
+
+    getMsg((data, peerId) => {
+      peerConnection = peerId;
+      handlePeerMessage(data);
+    });
+
+    quickRoom.onPeerJoin(peerId => {
+      peerConnection = peerId;
+      // Send identify
+      const identifyMsg = { type: 'identify' };
+      if (peerName) identifyMsg.name = peerName;
+      if (peerSessionKey) identifyMsg.sessionToken = peerSessionKey;
+      sendMsg(identifyMsg, peerId);
+      appendLine(`[P2P Quick] Joined room ${roomId}. Waiting for approval...`, 'sys');
+    });
+
+    quickRoom.onPeerLeave(peerId => {
+      if (peerId === peerConnection) {
+        appendLine('[P2P Quick] Host disconnected.', 'err');
+        cleanupPeerState();
       }
     });
-    document.getElementById('joinRoomInput').addEventListener('input', (e) => {
-      e.target.value = e.target.value.toUpperCase();
+
+    $('quickJoinBtn').disabled = true;
+    showToast('Joining room...', 'info');
+  } catch (err) {
+    appendLine(`[P2P Quick] Join error: ${err.message}`, 'err');
+    showToast('Failed to join', 'error');
+  }
+}
+
+// =============================================
+// File Share Tab
+// =============================================
+function setFSMode(mode) {
+  fsMode = mode;
+  $('fsModePrivate').classList.toggle('active', mode === 'private');
+  $('fsModeQuick').classList.toggle('active', mode === 'quick');
+  $('fsPrivateUI').style.display = mode === 'private' ? 'block' : 'none';
+  $('fsQuickUI').style.display = mode === 'quick' ? 'block' : 'none';
+}
+
+async function fsPrivateHost() {
+  try {
+    fsAuthKey = randomBytes(32);
+    fsPC = new RTCPeerConnection(getIceConfig());
+    fsDC = fsPC.createDataChannel('files', { ordered: true });
+
+    fsDC.onopen = () => { $('fsConnected').style.display = 'block'; $('fsPeerName').textContent = 'Peer connected'; showToast('Peer connected!', 'success'); };
+    fsDC.onmessage = (e) => handleFSMessage(e.data);
+    fsDC.onclose = () => { $('fsConnected').style.display = 'none'; showToast('Peer disconnected', 'error'); };
+
+    const offer = await fsPC.createOffer();
+    await fsPC.setLocalDescription(offer);
+    await new Promise((resolve) => {
+      if (fsPC.iceGatheringState === 'complete') { resolve(); return; }
+      fsPC.onicecandidate = (e) => { if (!e.candidate) resolve(); };
+      setTimeout(resolve, 5000);
     });
 
-    // =============================================
-    // Invite Link Auto-Join + Session Restore
-    // =============================================
+    const sdp = JSON.stringify(fsPC.localDescription);
+    const encrypted = await aesEncrypt(sdp, fsAuthKey);
+    const keyStr = toBase64Url(fsAuthKey);
+    const base = window.location.href.split('#')[0];
+    fsInviteLink = `${base}#m=f&o=${encrypted}&k=${keyStr}`;
+    await navigator.clipboard.writeText(fsInviteLink).catch(() => {});
 
-    function parseInviteHash() {
-      const hash = window.location.hash;
-      if (!hash || !hash.includes('join=')) return null;
-      const params = new URLSearchParams(hash.substring(1));
-      const roomId = (params.get('join') || '').toUpperCase();
-      const token = params.get('token') || null;
-      if (!roomId || roomId.length !== 6) return null;
-      // Clear the hash so the token isn't visible/reusable from the URL bar
-      history.replaceState(null, '', window.location.pathname + window.location.search);
-      return { roomId, token };
+    $('fsPrivateHostActive').style.display = 'block';
+    $('fsPrivateHostBtn').disabled = true;
+    showToast('Invite link copied!', 'success');
+  } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
+}
+
+function fsCopyPrivateInvite() {
+  navigator.clipboard.writeText(fsInviteLink).then(() => showToast('Copied!', 'success'));
+}
+
+async function fsPrivateComplete() {
+  const code = $('fsPrivateAnswer').value.trim();
+  if (!code) return;
+  try {
+    const answerSDP = JSON.parse(atob(code));
+    await fsPC.setRemoteDescription(new RTCSessionDescription(answerSDP));
+  } catch (err) { showToast(`Invalid code: ${err.message}`, 'error'); }
+}
+
+async function fsPrivateJoinViaLink(offerEnc, keyStr) {
+  try {
+    const keyBytes = fromBase64Url(keyStr);
+    const sdpJson = await aesDecrypt(offerEnc, keyBytes);
+    const offer = JSON.parse(sdpJson);
+    const pc = new RTCPeerConnection(getIceConfig());
+
+    pc.ondatachannel = (e) => {
+      fsDC = e.channel;
+      fsDC.onopen = () => { $('fsConnected').style.display = 'block'; $('fsPeerName').textContent = 'Connected to host'; showToast('Connected!', 'success'); };
+      fsDC.onmessage = (e) => handleFSMessage(e.data);
+      fsDC.onclose = () => { $('fsConnected').style.display = 'none'; };
+    };
+
+    await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    await new Promise((resolve) => {
+      if (pc.iceGatheringState === 'complete') { resolve(); return; }
+      pc.onicecandidate = (e) => { if (!e.candidate) resolve(); };
+      setTimeout(resolve, 5000);
+    });
+
+    const answerCode = btoa(JSON.stringify(pc.localDescription));
+    switchMainTab('fileshare'); setFSMode('private');
+    $('fsPrivateHostActive').style.display = 'block';
+    $('fsPrivateHostBtn').disabled = true;
+
+    // Show answer code
+    const div = document.createElement('div');
+    div.innerHTML = `<div class="room-display" style="margin-bottom:12px"><div class="room-label">YOUR CONNECTION CODE</div><div class="sdp-display" id="fsAnswerCode">${escapeHTML(answerCode)}</div><button class="btn btn-primary" onclick="navigator.clipboard.writeText(document.getElementById('fsAnswerCode').textContent).then(()=>showToast('Copied!','success'))" style="margin:4px auto">Copy Code</button></div>`;
+    $('fsPrivateUI').appendChild(div);
+    showToast('Connection code ready', 'info');
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  } catch (err) { showToast(`Join error: ${err.message}`, 'error'); }
+}
+
+async function fsQuickCreate() {
+  try {
+    const { joinRoom } = await loadTrystero();
+    const roomId = generateRoomId();
+    const pass = generatePassword();
+    fsRoom = joinRoom({ appId: 'serial-console-files-v2', password: pass }, roomId);
+
+    const [sendFile, getFile, onProgress] = fsRoom.makeAction('file');
+    fsSendAction = sendFile; fsGetAction = getFile; fsProgressAction = onProgress;
+
+    getFile((data, peerId, meta) => handleFSReceive(data, meta));
+
+    fsRoom.onPeerJoin(peerId => {
+      fsConnectedPeer = peerId;
+      $('fsConnected').style.display = 'block';
+      $('fsPeerName').textContent = `Peer: ${peerId.substring(0, 8)}`;
+      showToast('Peer joined!', 'success');
+    });
+    fsRoom.onPeerLeave(peerId => {
+      if (peerId === fsConnectedPeer) {
+        fsConnectedPeer = null;
+        $('fsConnected').style.display = 'none';
+        showToast('Peer left', 'error');
+      }
+    });
+
+    $('fsRoomCode').textContent = roomId;
+    $('fsRoomPass').textContent = pass;
+    $('fsQuickRoomInfo').style.display = 'block';
+    $('fsCreateRoomBtn').disabled = true;
+    showToast('Room created!', 'success');
+  } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
+}
+
+function fsCopyRoomInfo() {
+  navigator.clipboard.writeText(`Room: ${$('fsRoomCode').textContent}\nPassword: ${$('fsRoomPass').textContent}`).then(() => showToast('Copied!', 'success'));
+}
+
+function fsLeaveRoom() {
+  if (fsRoom) { try { fsRoom.leave(); } catch {} fsRoom = null; }
+  fsSendAction = null; fsConnectedPeer = null;
+  $('fsQuickRoomInfo').style.display = 'none';
+  $('fsConnected').style.display = 'none';
+  $('fsCreateRoomBtn').disabled = false;
+}
+
+async function fsQuickJoin() {
+  const roomId = $('fsJoinRoomInput').value.trim().toUpperCase();
+  const pass = $('fsJoinPassInput').value.trim();
+  if (!roomId || roomId.length !== 6 || !pass) { showToast('Enter room code and password', 'error'); return; }
+  try {
+    const { joinRoom } = await loadTrystero();
+    fsRoom = joinRoom({ appId: 'serial-console-files-v2', password: pass }, roomId);
+
+    const [sendFile, getFile, onProgress] = fsRoom.makeAction('file');
+    fsSendAction = sendFile; fsGetAction = getFile; fsProgressAction = onProgress;
+
+    getFile((data, peerId, meta) => handleFSReceive(data, meta));
+
+    fsRoom.onPeerJoin(peerId => {
+      fsConnectedPeer = peerId;
+      $('fsConnected').style.display = 'block';
+      $('fsPeerName').textContent = `Peer: ${peerId.substring(0, 8)}`;
+      showToast('Connected!', 'success');
+    });
+    fsRoom.onPeerLeave(peerId => {
+      if (peerId === fsConnectedPeer) { fsConnectedPeer = null; $('fsConnected').style.display = 'none'; }
+    });
+
+    $('fsRoomCode').textContent = roomId;
+    $('fsRoomPass').textContent = pass;
+    $('fsQuickRoomInfo').style.display = 'block';
+    $('fsJoinRoomBtn').disabled = true;
+    showToast('Joining...', 'info');
+  } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
+}
+
+// File Share: send/receive
+const CHUNK_SIZE = 16384;
+let fsPendingFiles = {};
+
+function handleFSMessage(rawData) {
+  try {
+    const msg = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
+    if (msg.type === 'file-meta') {
+      fsPendingFiles[msg.id] = { name: msg.name, size: msg.size, chunks: [], received: 0, total: msg.totalChunks };
+      addFSRecvItem(msg.id, msg.name, msg.size);
+    } else if (msg.type === 'file-chunk') {
+      const f = fsPendingFiles[msg.id];
+      if (!f) return;
+      f.chunks[msg.index] = msg.data;
+      f.received++;
+      updateFSRecvProgress(msg.id, f.received / f.total);
+      if (f.received === f.total) {
+        const blob = new Blob(f.chunks.map(c => fromBase64Url(c)), { type: 'application/octet-stream' });
+        completeFSRecv(msg.id, blob, f.name);
+        delete fsPendingFiles[msg.id];
+      }
     }
+  } catch {}
+}
 
-    (function restoreSession() {
-      // Check for invite link first (takes priority over saved session)
-      const invite = parseInviteHash();
-      if (invite) {
-        appendToTerminal('Serial Console - Web Serial API Terminal\n', 'system-msg');
-        appendToTerminal(`[Remote] Joining session via invite link...\n`, 'remote-msg');
+function handleFSReceive(data, meta) {
+  // Trystero binary receive
+  const blob = new Blob([data]);
+  const name = meta?.name || 'file';
+  const id = 'trystero-' + Date.now();
+  addFSRecvItem(id, name, blob.size);
+  updateFSRecvProgress(id, 1);
+  completeFSRecv(id, blob, name);
+}
 
-        if (!('serial' in navigator)) {
-          connectBtn.disabled = true;
-        }
+function addFSRecvItem(id, name, size) {
+  const list = $('fsRecvList');
+  if (list.querySelector('p')) list.innerHTML = '';
+  const item = document.createElement('div');
+  item.className = 'fs-file-item'; item.id = `fs-recv-${id}`;
+  item.innerHTML = `<div><div class="fs-file-name">${escapeHTML(name)}</div><div class="fs-file-size">${formatBytes(size)}</div><div class="fs-file-progress"><div class="fs-file-progress-bar" id="fs-recv-bar-${id}" style="width:0%"></div></div></div><div id="fs-recv-action-${id}"></div>`;
+  list.appendChild(item);
+}
 
-        // Store the invite token so it's sent with identify
-        peerInviteToken = invite.token;
+function updateFSRecvProgress(id, pct) {
+  const bar = $(`fs-recv-bar-${id}`);
+  if (bar) bar.style.width = (pct * 100) + '%';
+}
 
-        // Auto-fill and join
-        document.getElementById('joinRoomInput').value = invite.roomId;
-        // Small delay to ensure PeerJS CDN is ready
-        setTimeout(() => joinSession(), 300);
-        return;
-      }
+function completeFSRecv(id, blob, name) {
+  const action = $(`fs-recv-action-${id}`);
+  if (action) {
+    const url = URL.createObjectURL(blob);
+    action.innerHTML = `<a href="${url}" download="${escapeHTML(name)}" class="btn btn-primary" style="font-size:10px;padding:3px 8px;text-decoration:none">Download</a>`;
+  }
+}
 
-      const session = loadSession();
+async function fsSendFile(file) {
+  if (fsDC && fsDC.readyState === 'open') {
+    // Private mode: chunk and send via DC
+    const id = Date.now().toString();
+    const buffer = await file.arrayBuffer();
+    const totalChunks = Math.ceil(buffer.byteLength / CHUNK_SIZE);
+    fsDC.send(JSON.stringify({ type: 'file-meta', id, name: file.name, size: file.size, totalChunks }));
 
-      if (!session || !session.roomId || !session.role) {
-        // No session to restore - show normal welcome
-        appendToTerminal('Serial Console - Web Serial API Terminal\n', 'system-msg');
-        appendToTerminal('Click "Connect" to select a serial port, or use Remote to share/join.\n\n', 'system-msg');
+    const sendItem = addFSSendItem(file.name, file.size);
+    for (let i = 0; i < totalChunks; i++) {
+      const chunk = buffer.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+      fsDC.send(JSON.stringify({ type: 'file-chunk', id, index: i, data: toBase64Url(chunk) }));
+      updateFSSendProgress(sendItem, (i + 1) / totalChunks);
+      if (i % 10 === 0) await sleep(1); // Yield to event loop
+    }
+    showToast(`Sent ${file.name}`, 'success');
+  } else if (fsSendAction && fsConnectedPeer) {
+    // Quick mode: use Trystero binary support
+    const buffer = await file.arrayBuffer();
+    const sendItem = addFSSendItem(file.name, file.size);
+    fsSendAction(buffer, fsConnectedPeer, { name: file.name, size: file.size }, (pct) => {
+      updateFSSendProgress(sendItem, pct);
+    });
+    showToast(`Sending ${file.name}`, 'info');
+  } else {
+    showToast('No peer connected', 'error');
+  }
+}
 
-        if (!('serial' in navigator)) {
-          appendToTerminal('[Warning] Web Serial API is not available in this browser.\n', 'error-msg');
-          appendToTerminal('You can still join a remote session using a Room ID.\n', 'system-msg');
-          connectBtn.disabled = true;
-        }
-        return;
-      }
+function addFSSendItem(name, size) {
+  const list = $('fsSendList');
+  const item = document.createElement('div');
+  item.className = 'fs-file-item';
+  const id = 'send-' + Date.now();
+  item.innerHTML = `<div><div class="fs-file-name">${escapeHTML(name)}</div><div class="fs-file-size">${formatBytes(size)}</div><div class="fs-file-progress"><div class="fs-file-progress-bar" id="fs-${id}" style="width:0%"></div></div></div>`;
+  list.appendChild(item);
+  return id;
+}
 
-      // Restore terminal history
-      if (session.terminalHistory) {
-        terminalHistory = session.terminalHistory;
-        _origAppend(session.terminalHistory);
-      }
+function updateFSSendProgress(id, pct) {
+  const bar = $(`fs-${id}`);
+  if (bar) bar.style.width = (pct * 100) + '%';
+}
 
-      appendToTerminal(`\n[Session] Restoring ${session.role} session for room ${session.roomId}...\n`, 'system-msg');
+// File Share drag/drop
+const fsUploadZone = $('fsUploadZone');
+const fsFileInput = $('fsFileInput');
+fsUploadZone.addEventListener('dragover', e => { e.preventDefault(); fsUploadZone.classList.add('dragover'); });
+fsUploadZone.addEventListener('dragleave', () => fsUploadZone.classList.remove('dragover'));
+fsUploadZone.addEventListener('drop', e => {
+  e.preventDefault(); fsUploadZone.classList.remove('dragover');
+  for (const file of e.dataTransfer.files) fsSendFile(file);
+});
+fsUploadZone.addEventListener('click', () => fsFileInput.click());
+fsFileInput.addEventListener('change', () => { for (const file of fsFileInput.files) fsSendFile(file); });
 
-      if (!('serial' in navigator)) {
-        connectBtn.disabled = true;
-      }
+// =============================================
+// Event Handlers & Init
+// =============================================
+$('serialInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); sendData(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); if (!commandHistory.length) return; if (historyIndex === -1) historyIndex = commandHistory.length; historyIndex = Math.max(0, historyIndex - 1); $('serialInput').value = commandHistory[historyIndex]; }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); if (historyIndex === -1) return; historyIndex++; $('serialInput').value = historyIndex >= commandHistory.length ? (historyIndex = -1, '') : commandHistory[historyIndex]; }
+});
+document.addEventListener('keydown', e => { if (e.ctrlKey && e.key === 'l') { e.preventDefault(); clearTerminal(); } });
+if ('serial' in navigator) navigator.serial.addEventListener('disconnect', e => { if (port && e.target === port) disconnect(); });
 
-      if (session.role === 'host') {
-        // Restore allow-input state
-        if (session.allowInput) {
-          document.getElementById('allowRemoteInput').checked = true;
-        }
-        // Restore approved session tokens so returning peers auto-approve after host refresh
-        if (session.approvedSessionKeys && Array.isArray(session.approvedSessionKeys)) {
-          approvedSessionKeys = new Map(session.approvedSessionKeys);
-          appendToTerminal(`[Session] Restored ${approvedSessionKeys.size} approved session token(s).\n`, 'system-msg');
-        }
-        // Restore unused invite tokens
-        if (session.inviteTokens && Array.isArray(session.inviteTokens)) {
-          inviteTokens = new Map(session.inviteTokens);
-        }
-        reconnectHost(session.roomId);
-      } else if (session.role === 'peer') {
-        canWrite = session.allowInput || false;
-        peerName = session.peerName || '';
-        peerSessionKey = session.sessionToken || null;
-        reconnectPeer(session.roomId);
-      }
-    })();
-  </script>
+// Parse URL hash for invite links
+function checkUrlHash() {
+  const hash = window.location.hash;
+  if (!hash || hash.length < 5) return;
+  const params = new URLSearchParams(hash.substring(1));
+  const mode = params.get('m');
+  const offer = params.get('o');
+  const key = params.get('k');
+  if (!offer || !key) return;
 
+  if (mode === 'p') {
+    // Private P2P console sharing invite
+    privateJoinViaLink(offer, key);
+  } else if (mode === 'f') {
+    // Private file share invite
+    switchMainTab('fileshare'); setFSMode('private');
+    fsPrivateJoinViaLink(offer, key);
+  }
+}
+
+// Load settings and check URL hash on start
+loadSettings();
+checkUrlHash();
+
+// Expose functions to window for onclick handlers
+Object.assign(window, {
+  toggleConnection, sendData, clearTerminal, downloadLog, toggleTimestamps, toggleHex, toggleAutoscroll,
+  toggleSignal, togglePanel, closePanel, switchPanelTab, switchMainTab,
+  toggleSettings, saveSettings,
+  startFileTransfer, startConfigTransfer, pauseTransfer, cancelTransfer,
+  setP2PMode, privateStartHost, privateCopyInvite, privateCompleteConnection, disconnectPeer,
+  quickStartHost, quickCopyInfo, quickStopHost, quickJoinSession,
+  acceptPending, rejectPending, kickPeer, togglePeerWrite,
+  setFSMode, fsPrivateHost, fsCopyPrivateInvite, fsPrivateComplete,
+  fsQuickCreate, fsQuickJoin, fsLeaveRoom, fsCopyRoomInfo,
+  showToast
+});
+
+</script>
 </body>
 </html>
